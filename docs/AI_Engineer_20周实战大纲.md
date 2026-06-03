@@ -83,7 +83,7 @@
 任务1：安装 tiktoken，对同一段话分别用中文和英文计算 Token 数，对比差异
 任务2：写一个 cost_calculator(text, model) 函数，输入文本和模型名，输出预估费用（元）
 任务3：找一篇 5000 字的文章，计算如果全部作为 Prompt 发送，消耗多少 Token、花多少钱
-任务4：实验 Context Window 溢出：构造一个超长输入，观察 API 的报错信息
+任务4：实验 Context Window 与输出限制：观察输入越长响应越慢的关系，用 max_tokens 截断输出并观察 finish_reason 的变化
 ```
 
 ##### 3. SSE 流式传输（打字机效果的底层原理）

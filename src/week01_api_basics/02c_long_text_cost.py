@@ -98,7 +98,7 @@ print()
 
 windows = [4096, 8192, 32768, 65536, 131072]
 for w in windows:
-    chars_approx = int(w / 1.5)  # 中文约 1.5 token/字
+    chars_approx = int(w / 0.82)  # 中文约 1.5 token/字
     pages = chars_approx // 500  # 一页A4约500字
     print(f"  {w:>7,} tokens ≈ {chars_approx:>6,} 中文字 ≈ {pages} 页 A4")
 
