@@ -110,3 +110,31 @@
 4. **为什么大模型的上下文窗口大？** 由于 BPE 的设计，大模型的上下文窗口可以很大，因为每个 Token 都是独立的，不会因为相邻 Token 的合并而被压缩。而按字符分词，上下文窗口会非常小，因为相邻字符的合并会导致 Token 被压缩。
 
 # 遇到了 503 限流错误，生产环境需要重试机制和友好错误信息
+
+---
+
+## Ollama 常用命令
+
+| 命令 | 作用 |
+|------|------|
+| `ollama pull qwen3:4b` | 下载模型 |
+| `ollama run qwen3:4b` | 交互式对话（临时） |
+| `ollama ls` | 列出已下载的模型 |
+| `ollama ps` | 查看当前加载到内存中的模型 |
+| `ollama rm qwen3:4b` | 删除模型 |
+| `ollama show qwen3:4b` | 查看模型信息 |
+| `ollama serve` | 手动启动 API 服务 |
+
+### 服务管理 (systemd)
+
+```bash
+sudo systemctl status ollama    # 查看状态
+sudo systemctl start ollama     # 启动
+sudo systemctl stop ollama      # 停止
+sudo systemctl restart ollama   # 重启
+```
+
+API 地址: `http://localhost:11434`
+OpenAI 兼容端点: `http://localhost:11434/v1/chat/completions`
+
+模型按需加载到内存，空闲几分钟自动卸载。
