@@ -39,6 +39,7 @@
 import os
 
 import httpx
+
 from framework.consts import beijing_openai_base_http_api_url
 
 API_KEY = os.environ.get("BEIJING_API_KEY")

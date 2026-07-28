@@ -40,10 +40,12 @@
 4. 对比流式 vs 非流式 (01a_http_call.py) 的用户体验差异
 """
 
-import os
 import json
+import os
 import time
+
 import httpx
+
 from framework.consts import beijing_openai_base_http_api_url
 
 API_KEY = os.environ.get("BEIJING_API_KEY")

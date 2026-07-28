@@ -24,7 +24,6 @@
 
 import tiktoken
 
-
 # 通义千问/DeepSeek 价格表 (元/百万Token, 2026年参考)
 MODEL_PRICING = {
     "qwen3.6-flash":  {"input": 0.0,   "output": 0.0},

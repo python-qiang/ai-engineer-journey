@@ -33,9 +33,11 @@
 4. 对比同一个问题在本地 vs 云端的回答质量和速度差异
 """
 
-import httpx
 import json
 import time
+
+import httpx
+
 from framework.consts import ollama_base_url
 
 
