@@ -54,7 +54,7 @@ def call_api(user_message: str, max_completion_tokens: int = None) -> dict:
         "enable_thinking": False,
     }
     if max_completion_tokens:
-        # 用于限制模型本次响应中输出的最大 Token 数，包含思维链。若生成内容超过此值，生成将提前停止，且返回的 finish_reason 为 length。
+        # 用于限制模型本次响应中输出的最大 Token 数, 包含思维链. 若生成内容超过此值, 生成将提前停止, 且返回的 finish_reason 为 length.
         payload["max_completion_tokens"] = max_completion_tokens
 
     start = time.time()

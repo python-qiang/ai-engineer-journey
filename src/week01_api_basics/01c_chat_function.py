@@ -4,7 +4,7 @@
 === 本任务完成后你需要掌握的 ===
 
 1. 将重复的 API 调用逻辑封装为可复用函数:
-   - 不用每次都写 headers、URL、httpx.post
+   - 不用每次都写 headers, URL, httpx.post
    - 调用方只需要传 message 就能得到回复
 
 2. 函数参数设计:

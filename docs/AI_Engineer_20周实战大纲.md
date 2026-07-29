@@ -244,10 +244,15 @@
 **练习任务：**
 
 ```
-任务1：写一个 System Prompt，让模型扮演"严格的代码审查员"，只指出问题不写代码
-任务2：对比有 System Prompt 和没有 System Prompt 时，模型对同一问题的回答差异
-任务3：写一个 System Prompt，严格限制模型只能用中文回答，测试它是否遵守
-任务4：尝试用 User 消息"越狱"你的 System Prompt，观察模型的抗干扰能力
+任务1：System Prompt 实验
+  - 写一个"严格代码审查员"的 System Prompt（角色+约束+输出格式）
+  - 对比有/无 System Prompt 的回答差异
+  - 测试中文限制是否被遵守
+  - 尝试用 User 消息越狱，观察抗干扰能力
+
+任务2：Messages 数组结构实验
+  - 手动构造含 assistant 历史回复的 messages，让模型接着对话
+  - 调换 messages 顺序，观察输出变化
 ```
 
 ##### 2. 多轮对话的实现原理

@@ -76,6 +76,7 @@ GPT-2 之后的改进：
 | `ollama rm qwen3:4b` | 删除模型 |
 | `ollama show qwen3:4b` | 查看模型信息 |
 | `ollama serve` | 手动启动 API 服务 |
+| `ollama create` | 创建模型 |
 
 ### 3.1 服务管理 (systemd)
 
