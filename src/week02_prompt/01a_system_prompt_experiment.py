@@ -30,7 +30,7 @@
 
 实验 D: 越狱测试(云端 vs 本地对比)
   - 在 user 消息中尝试让模型忽略 system prompt
-  - 同时用 qwen3.7-plus(云端) 和 qwen3:4b(本地) 对比遵守度
+  - 同时用 qwen3.7-plus(云端) 和 qwen2.5:1.5b(本地) 对比遵守度
 
 === 提示 ===
 
@@ -171,7 +171,7 @@ CLOUD_ONLY = [
 
 CLOUD_VS_LOCAL = [
     ("云端 qwen3.7-plus", "qwen3.7-plus", beijing_openai_base_http_api_url),
-    ("本地 qwen3:4b", "qwen3:4b", ollama_base_url),
+    ("本地 qwen2.5:1.5b", "qwen2.5:1.5b", ollama_base_url),
 ]
 
 
