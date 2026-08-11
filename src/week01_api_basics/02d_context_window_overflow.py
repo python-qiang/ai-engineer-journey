@@ -42,7 +42,7 @@ MODEL = "qwen3.6-flash-2026-04-16"
 # MODEL = "qwen3.6-plus"
 
 
-def call_api(user_message: str, max_completion_tokens: int = None) -> dict:
+def call_api(user_message: str, max_completion_tokens: int | None = None) -> dict:
     """调用 API 并记录耗时。"""
     payload = {
         "model": MODEL,
