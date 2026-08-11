@@ -64,6 +64,7 @@
 import json
 import os
 import time
+import uuid
 
 import httpx
 
@@ -152,13 +153,55 @@ def chat(
     return answer_content, usage_info, finish_reason
 
 
+SESSIONS_DIR = os.path.join(os.path.dirname(__file__), "sessions")
+os.makedirs(SESSIONS_DIR, exist_ok=True)
+
+
+def new_session_id() -> str:
+    """生成一个短 session_id (UUID 前8位, 方便人类阅读)."""
+    return uuid.uuid4().hex[:8]
+
+
+def session_file_path(session_id: str) -> str:
+    """根据 session_id 返回对应的文件路径."""
+    return os.path.join(SESSIONS_DIR, f"{session_id}.json")
+
+
+def list_sessions() -> list[dict]:
+    """列出所有已保存的 session, 返回 [{id, file, mtime, preview}, ...]."""
+    sessions = []
+    for f in sorted(os.listdir(SESSIONS_DIR)):
+        if not f.endswith(".json"):
+            continue
+        fpath = os.path.join(SESSIONS_DIR, f)
+        sid = f.removesuffix(".json")
+        mtime = os.path.getmtime(fpath)
+        # 读取第一条 user 消息作为预览
+        try:
+            with open(fpath, "r", encoding="utf-8") as fp:
+                msgs = json.load(fp)
+            preview = next(
+                (m["content"][:30] for m in msgs if m["role"] == "user"), "(空对话)"
+            )
+        except (OSError, json.JSONDecodeError):
+            preview = "(无法读取)"
+        sessions.append({
+            "id": sid,
+            "time": time.strftime("%m-%d %H:%M", time.localtime(mtime)),
+            "preview": preview,
+        })
+    return sessions
+
+
 if __name__ == "__main__":
-    total_completion_tokens = 0  # 改为只统计实际生成的 tokens
-    total_prompt_tokens = 0  # 新增：统计输入的 tokens
+    total_completion_tokens = 0
+    total_prompt_tokens = 0
+    session_id = new_session_id()
     messages = [{"role": "system", "content": "你是一个无所不知的AI智能助手。"}]
 
     print("=== 欢迎使用多轮对话 CLI ===")
-    print("指令: /new (清空), /save (保存), /load (加载), quit/exit (退出)")
+    print(f"当前会话: {session_id}")
+    print("指令: /new (新建), /save (保存), /load (加载), /list (列出会话), quit/exit (退出)")
 
     while True:
         try:
@@ -176,38 +219,63 @@ if __name__ == "__main__":
                 break
 
             case "/new":
-                messages = messages[:1]  # 保留 system prompt
+                session_id = new_session_id()
+                messages = messages[:1]
                 total_completion_tokens = 0
                 total_prompt_tokens = 0
-                print("--- 对话已清空, Token 统计已重置 ---")
+                print(f"--- 新会话: {session_id} ---")
 
             case "/save":
-                file_path = os.path.join(
-                    os.path.dirname(__file__), f"chat_{int(time.time())}.json"
-                )
+                fpath = session_file_path(session_id)
                 try:
-                    with open(file_path, "w", encoding="utf-8") as f:
+                    with open(fpath, "w", encoding="utf-8") as f:
                         json.dump(messages, f, ensure_ascii=False, indent=2)
-                    print(f"--- 已保存到 {file_path} ---")
+                    print(f"--- 已保存会话 {session_id} ---")
                 except OSError as e:
                     print(f"--- 保存失败: {e} ---")
 
+            case "/list":
+                sessions = list_sessions()
+                if not sessions:
+                    print("--- 暂无已保存的会话 ---")
+                else:
+                    print("--- 已保存的会话 ---")
+                    for s in sessions:
+                        marker = " ← 当前" if s["id"] == session_id else ""
+                        print(f"  [{s['id']}] {s['time']} | {s['preview']}{marker}")
+
             case "/load":
-                file_path = input("文件路径: ").strip()
-                if not os.path.exists(file_path):
-                    print("文件不存在")
+                sessions = list_sessions()
+                if not sessions:
+                    print("--- 暂无已保存的会话 ---")
                     continue
+                print("--- 选择要加载的会话 ---")
+                for i, s in enumerate(sessions):
+                    print(f"  {i + 1}. [{s['id']}] {s['time']} | {s['preview']}")
+                choice = input("输入编号或 session_id: ").strip()
+                # 支持输入编号或 id
+                target_id = None
+                if choice.isdigit() and 1 <= int(choice) <= len(sessions):
+                    target_id = sessions[int(choice) - 1]["id"]
+                elif any(s["id"] == choice for s in sessions):
+                    target_id = choice
+                if not target_id:
+                    print("--- 无效选择 ---")
+                    continue
+                fpath = session_file_path(target_id)
                 try:
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        loaded_messages = json.load(f)
-                    # 简单校验 JSON 格式
-                    if isinstance(loaded_messages, list) and all(
-                        "role" in m and "content" in m for m in loaded_messages
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        loaded = json.load(f)
+                    if isinstance(loaded, list) and all(
+                        "role" in m and "content" in m for m in loaded
                     ):
-                        messages = loaded_messages
-                        print(f"--- 已加载 {len(messages)} 条消息 ---")
+                        messages = loaded
+                        session_id = target_id
+                        total_completion_tokens = 0
+                        total_prompt_tokens = 0
+                        print(f"--- 已加载会话 {session_id} ({len(messages)} 条消息) ---")
                     else:
-                        print("--- 文件格式不正确，加载失败 ---")
+                        print("--- 文件格式不正确 ---")
                 except (OSError, json.JSONDecodeError) as e:
                     print(f"--- 加载失败: {e} ---")
 
@@ -233,7 +301,7 @@ if __name__ == "__main__":
                             comp_tokens = usage.get("completion_tokens", 0)
                             prompt_tokens = usage.get("prompt_tokens", 0)
                             total_completion_tokens += comp_tokens
-                            total_prompt_tokens += prompt_tokens  # 注意：这里累加的是每次请求的 prompt, 包含历史重复
+                            total_prompt_tokens += prompt_tokens
 
                             print(
                                 f"\n[本轮生成: {comp_tokens} | 累计生成: {total_completion_tokens} | 对话轮数: {(len(messages) - 1) // 2}]"
@@ -248,6 +316,5 @@ if __name__ == "__main__":
 
                 except (httpx.HTTPError, RuntimeError) as e:
                     print(f"\n--- 请求异常: {e} ---")
-                    # 发生异常时，回滚最后一条 user 消息，防止污染上下文
                     if messages[-1]["role"] == "user":
                         messages.pop()
