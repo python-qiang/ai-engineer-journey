@@ -36,13 +36,12 @@ import os
 
 import httpx
 
-from framework.consts import beijing_openai_base_http_api_url
+from framework.consts import DEFAULT_MODEL, beijing_openai_base_http_api_url
 
 API_KEY = os.environ.get("BEIJING_API_KEY")
 if not API_KEY:
     raise RuntimeError("BEIJING_API_KEY 未设置, 请确认 direnv 已加载")
 
-MODEL = "qwen3.7-plus"
 QUESTION = "用一句话解释什么是递归。"
 TEMPERATURES = [0, 0.7, 1.5]
 RUNS_PER_TEMP = 10
@@ -55,7 +54,7 @@ def call_api(question: str, temperature: float) -> str:
         "Content-Type": "application/json",
     }
     payload = {
-        "model": MODEL,
+        "model": DEFAULT_MODEL,
         "messages": [
             {"role": "system", "content": "你是一个简洁的助手, 用一句话回答问题。"},
             {"role": "user", "content": question},
@@ -82,7 +81,7 @@ def call_api(question: str, temperature: float) -> str:
 
 
 if __name__ == "__main__":
-    print(f"模型: {MODEL}")
+    print(f"模型: {DEFAULT_MODEL}")
     print(f"问题: {QUESTION}")
     print(f"每种 temperature 调用 {RUNS_PER_TEMP} 次")
     print()

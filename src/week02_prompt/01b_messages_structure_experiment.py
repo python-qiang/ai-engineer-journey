@@ -47,7 +47,12 @@ import os
 
 import httpx
 
-from framework.consts import beijing_openai_base_http_api_url, ollama_base_url
+from framework.consts import (
+    DEFAULT_MODEL,
+    LOCAL_WEAK_MODEL,
+    beijing_openai_base_http_api_url,
+    ollama_base_url,
+)
 
 API_KEY = os.environ.get("BEIJING_API_KEY")
 if not API_KEY:
@@ -56,7 +61,7 @@ if not API_KEY:
 
 def chat_with_messages(
     messages: list[dict],
-    model: str = "qwen3.7-plus",
+    model: str = DEFAULT_MODEL,
     url: str = beijing_openai_base_http_api_url,
     enable_thinking: bool = True,
     show_thinking: bool = False,
@@ -217,8 +222,8 @@ if __name__ == "__main__":
     user_msg = {"role": "user", "content": "什么是递归?"}
 
     for label, model, url in [
-        ("云端 qwen3.7-plus", "qwen3.7-plus", beijing_openai_base_http_api_url),
-        ("本地 qwen2.5:1.5b", "qwen2.5:1.5b", ollama_base_url),
+        (f"云端 {DEFAULT_MODEL}", DEFAULT_MODEL, beijing_openai_base_http_api_url),
+        (f"本地 {LOCAL_WEAK_MODEL}", LOCAL_WEAK_MODEL, ollama_base_url),
     ]:
         print(f"\n  === {label} ===\n")
 

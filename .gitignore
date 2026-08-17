@@ -9,5 +9,3 @@ node_modules/
 # Chat session files
 sessions/
 
-# Kiro CLI local config
-.kiro/

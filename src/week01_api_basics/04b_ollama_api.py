@@ -38,13 +38,13 @@ import time
 
 import httpx
 
-from framework.consts import ollama_base_url
+from framework.consts import LOCAL_MODEL, ollama_base_url
 
 
 def stream_chat(
     message: str,
     url: str = ollama_base_url,
-    model: str = "qwen3:4b",
+    model: str = LOCAL_MODEL,
     temperature: float = 0.7,
     system_prompt: str = "你是一个助手, 回答请保持简洁和专业。",
     stream: bool = True,

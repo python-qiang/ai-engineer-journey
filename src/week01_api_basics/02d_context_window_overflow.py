@@ -27,7 +27,7 @@ import time
 
 import httpx
 
-from framework.consts import beijing_openai_base_http_api_url
+from framework.consts import DEFAULT_MODEL, beijing_openai_base_http_api_url
 
 API_KEY = os.environ.get("BEIJING_API_KEY")
 if not API_KEY:
@@ -38,14 +38,11 @@ headers = {
     "Content-Type": "application/json",
 }
 
-MODEL = "qwen3.6-flash-2026-04-16"
-# MODEL = "qwen3.6-plus"
-
 
 def call_api(user_message: str, max_completion_tokens: int | None = None) -> dict:
     """调用 API 并记录耗时。"""
     payload = {
-        "model": MODEL,
+        "model": DEFAULT_MODEL,
         "messages": [
             {"role": "system", "content": "你是一个助手, 回答请保持简洁和专业, 尽量控制在200字以内。"},
             {"role": "user", "content": user_message},

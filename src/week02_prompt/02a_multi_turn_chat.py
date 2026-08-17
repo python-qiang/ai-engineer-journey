@@ -68,7 +68,7 @@ import uuid
 
 import httpx
 
-from framework.consts import beijing_openai_base_http_api_url
+from framework.consts import DEFAULT_MODEL, beijing_openai_base_http_api_url
 
 API_KEY = os.environ.get("BEIJING_API_KEY")
 if not API_KEY:
@@ -77,7 +77,7 @@ if not API_KEY:
 
 def chat(
     messages: list[dict],
-    model: str = "qwen3.7-plus",
+    model: str = DEFAULT_MODEL,
     max_tokens: int | None = None,
 ) -> tuple[str, dict | None]:
     headers = {

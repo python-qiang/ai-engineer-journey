@@ -46,7 +46,7 @@ import time
 
 import httpx
 
-from framework.consts import beijing_openai_base_http_api_url
+from framework.consts import DEFAULT_MODEL, beijing_openai_base_http_api_url
 
 API_KEY = os.environ.get("BEIJING_API_KEY")
 if not API_KEY:
@@ -55,7 +55,7 @@ if not API_KEY:
 
 def stream_chat(
     message: str,
-    model: str = "qwen3.6-flash-2026-04-16",
+    model: str = DEFAULT_MODEL,
     temperature: float = 0.7,
     system_prompt: str = "你是一个助手, 回答请保持简洁和专业。",
     include_usage: bool = True,
@@ -183,7 +183,7 @@ if __name__ == "__main__":
     print()
 
     result = stream_chat(
-        model="qwen3.6-plus",
+        model=DEFAULT_MODEL,
         message="用100字介绍什么是SSE (Server-Sent Events)。",
         include_usage=True,
         enable_thinking=True,

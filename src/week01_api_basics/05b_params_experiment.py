@@ -39,13 +39,11 @@ import os
 
 import httpx
 
-from framework.consts import beijing_openai_base_http_api_url
+from framework.consts import DEFAULT_MODEL, beijing_openai_base_http_api_url
 
 API_KEY = os.environ.get("BEIJING_API_KEY")
 if not API_KEY:
     raise RuntimeError("BEIJING_API_KEY 未设置, 请确认 direnv 已加载")
-
-MODEL = "qwen3.7-plus"
 
 
 def call_api(question: str, system_prompt: str = "你是一个简洁的助手, 回答问题控制在200字以内。", **kwargs) -> str:
@@ -55,7 +53,7 @@ def call_api(question: str, system_prompt: str = "你是一个简洁的助手, �
         "Content-Type": "application/json",
     }
     payload = {
-        "model": MODEL,
+        "model": DEFAULT_MODEL,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": question},

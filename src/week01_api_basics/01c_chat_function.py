@@ -40,7 +40,7 @@ import os
 
 import httpx
 
-from framework.consts import beijing_openai_base_http_api_url
+from framework.consts import DEFAULT_MODEL, beijing_openai_base_http_api_url
 
 API_KEY = os.environ.get("BEIJING_API_KEY")
 if not API_KEY:
@@ -49,7 +49,7 @@ if not API_KEY:
 
 def chat(
     message: str,
-    model: str = "qwen3.6-flash-2026-04-16",
+    model: str = DEFAULT_MODEL,
     temperature: float = 0.7,
     system_prompt: str = "你是一个简洁的助手, 回答控制在100字以内, 不要包含任何广告或营销信息, 请保持简洁和专业。",
 ) -> dict:

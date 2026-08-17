@@ -44,7 +44,7 @@ import os
 import httpx
 
 # from framework.consts import frankfurt_openai_base_http_api_url
-from framework.consts import beijing_openai_base_http_api_url
+from framework.consts import DEFAULT_MODEL, beijing_openai_base_http_api_url
 
 # API_KEY = os.environ.get("FRANKFURT_API_KEY")
 API_KEY = os.environ.get("BEIJING_API_KEY")
@@ -57,7 +57,7 @@ headers = {
 }
 
 payload = {
-    "model": "qwen3.6-flash-2026-04-16",
+    "model": DEFAULT_MODEL,
     # "model": "deepseek-v4-flash",
     "messages": [
         {
