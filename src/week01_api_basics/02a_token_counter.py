@@ -42,6 +42,7 @@ import tiktoken
 
 # === 1. 计算 Token 数 ===
 
+
 def count_tokens(text: str, model: str = "gpt-4o") -> int:
     """计算文本的 Token 数量。
 
@@ -79,8 +80,10 @@ samples = [
 
 for label, text in samples:
     count = count_tokens(text)
-    print(f"[{label}] \"{text}\"")
-    print(f"        {len(text)} 字符 → {count} tokens (平均 1字符 ≈ {count/len(text):.2f} token)")
+    print(f'[{label}] "{text}"')
+    print(
+        f"        {len(text)} 字符 → {count} tokens (平均 1字符 ≈ {count / len(text):.2f} token)"
+    )
     print()
 
 
@@ -106,17 +109,17 @@ print()
 
 # 通义千问价格 (元/百万Token, 2026年参考价)
 PRICING = {
-    "qwen3.6-flash":  {"input": 0.0,  "output": 0.0},    # 免费
-    "qwen-turbo":     {"input": 0.3,  "output": 0.6},
-    "qwen-plus":      {"input": 0.8,  "output": 2.0},
-    "qwen-max":       {"input": 2.0,  "output": 6.0},
-    "deepseek-v3":    {"input": 1.0,  "output": 2.0},
+    "qwen3.6-flash": {"input": 0.0, "output": 0.0},  # 免费
+    "qwen-turbo": {"input": 0.3, "output": 0.6},
+    "qwen-plus": {"input": 0.8, "output": 2.0},
+    "qwen-max": {"input": 2.0, "output": 6.0},
+    "deepseek-v3": {"input": 1.0, "output": 2.0},
 }
 
 
 def estimate_cost(input_text: str, output_tokens: int = 200, model: str = "qwen-turbo"):
     """估算一次 API 调用的费用。"""
-    input_tokens = count_tokens(input_text) # 用 gpt-4o 分词器估算, 有 10-20% 误差
+    input_tokens = count_tokens(input_text)  # 用 gpt-4o 分词器估算, 有 10-20% 误差
     price = PRICING[model]
 
     input_cost = input_tokens * price["input"] / 1_000_000
@@ -125,14 +128,16 @@ def estimate_cost(input_text: str, output_tokens: int = 200, model: str = "qwen-
 
     print(f"模型: {model}")
     print(f"  输入: {input_tokens} tokens × ¥{price['input']}/百万 = ¥{input_cost:.6f}")
-    print(f"  输出: ~{output_tokens} tokens × ¥{price['output']}/百万 = ¥{output_cost:.6f}")
+    print(
+        f"  输出: ~{output_tokens} tokens × ¥{price['output']}/百万 = ¥{output_cost:.6f}"
+    )
     print(f"  单次总计: ¥{total:.6f}")
     print(f"  如果每天调 1000 次: ¥{total * 1000:.3f}/天")
     print()
 
 
 sample = "请帮我写一段Python代码, 实现快速排序算法, 并解释每一步的作用。"
-print(f"示例输入: \"{sample}\"")
+print(f'示例输入: "{sample}"')
 print("假设输出: ~500 tokens")
 print()
 

@@ -26,16 +26,18 @@ import tiktoken
 
 # 通义千问/DeepSeek 价格表 (元/百万Token, 2026年参考)
 MODEL_PRICING = {
-    "qwen3.6-flash":  {"input": 0.0,   "output": 0.0},
-    "qwen-turbo":     {"input": 0.3,   "output": 0.6},
-    "qwen-plus":      {"input": 0.8,   "output": 2.0},
-    "qwen-max":       {"input": 2.0,   "output": 6.0},
-    "deepseek-v3":    {"input": 1.0,   "output": 2.0},
-    "gpt-4o":         {"input": 17.5,  "output": 70.0},   # 贵100倍, 感受一下
+    "qwen3.6-flash": {"input": 0.0, "output": 0.0},
+    "qwen-turbo": {"input": 0.3, "output": 0.6},
+    "qwen-plus": {"input": 0.8, "output": 2.0},
+    "qwen-max": {"input": 2.0, "output": 6.0},
+    "deepseek-v3": {"input": 1.0, "output": 2.0},
+    "gpt-4o": {"input": 17.5, "output": 70.0},  # 贵100倍, 感受一下
 }
 
 
-def cost_calculator(text: str, model: str = "qwen-turbo", output_tokens: int = 200) -> dict:
+def cost_calculator(
+    text: str, model: str = "qwen-turbo", output_tokens: int = 200
+) -> dict:
     """输入文本和模型名, 输出预估费用 (元)。
 
     Args:
@@ -71,10 +73,12 @@ def cost_calculator(text: str, model: str = "qwen-turbo", output_tokens: int = 2
 if __name__ == "__main__":
     sample_text = "请帮我写一段Python代码, 实现快速排序算法, 并解释每一步的作用。要求代码有详细注释。"
 
-    print(f"输入文本: \"{sample_text}\"")
+    print(f'输入文本: "{sample_text}"')
     print("预估输出: 500 tokens")
     print()
-    print(f"{'模型':<18} {'输入Token':<10} {'输入费用':<12} {'输出费用':<12} {'总费用':<12} {'日均(1000次)'}")
+    print(
+        f"{'模型':<18} {'输入Token':<10} {'输入费用':<12} {'输出费用':<12} {'总费用':<12} {'日均(1000次)'}"
+    )
     print("-" * 85)
 
     for model in MODEL_PRICING:
@@ -92,5 +96,4 @@ if __name__ == "__main__":
     print()
     print("结论: qwen3.6-flash 免费, qwen-turbo 极便宜, gpt-4o 贵 100 倍。")
 
-    
     print("实际选型时在效果满足需求的前提下, 优先选便宜的模型。")

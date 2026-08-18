@@ -29,12 +29,12 @@ encoding = tiktoken.encoding_for_model("gpt-4o")
 
 # 价格表 (元/百万Token)
 MODEL_PRICING = {
-    "qwen3.6-flash":  {"input": 0.0,   "output": 0.0},
-    "qwen-turbo":     {"input": 0.3,   "output": 0.6},
-    "qwen-plus":      {"input": 0.8,   "output": 2.0},
-    "qwen-max":       {"input": 2.0,   "output": 6.0},
-    "deepseek-v3":    {"input": 1.0,   "output": 2.0},
-    "gpt-4o":         {"input": 17.5,  "output": 70.0},
+    "qwen3.6-flash": {"input": 0.0, "output": 0.0},
+    "qwen-turbo": {"input": 0.3, "output": 0.6},
+    "qwen-plus": {"input": 0.8, "output": 2.0},
+    "qwen-max": {"input": 2.0, "output": 6.0},
+    "deepseek-v3": {"input": 1.0, "output": 2.0},
+    "gpt-4o": {"input": 17.5, "output": 70.0},
 }
 
 

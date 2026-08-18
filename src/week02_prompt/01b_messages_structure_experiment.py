@@ -126,7 +126,6 @@ def chat_with_messages(
 
 
 if __name__ == "__main__":
-
     # ============================================================
     # 实验 A: 用 assistant 消息构造 few-shot
     # ============================================================
@@ -137,24 +136,40 @@ if __name__ == "__main__":
 
     # 场景: 你想让模型用固定格式 "概念 | 一句话解释 | 例子" 回答
     print("--- 无 few-shot (直接问) ---")
-    chat_with_messages([
-        {"role": "system", "content": "你是一个编程概念解释助手, 回答控制在50字以内。"},
-        {"role": "user", "content": "什么是闭包?"},
-    ])
+    chat_with_messages(
+        [
+            {
+                "role": "system",
+                "content": "你是一个编程概念解释助手, 回答控制在50字以内。",
+            },
+            {"role": "user", "content": "什么是闭包?"},
+        ]
+    )
     print()
 
     print("--- 有 few-shot (先示范格式) ---")
-    chat_with_messages([
-        {"role": "system", "content": "你是一个编程概念解释助手, 回答控制在50字以内。用固定格式回答。"},
-        # few-shot 示例 1
-        {"role": "user", "content": "什么是变量?"},
-        {"role": "assistant", "content": "概念: 变量\n一句话: 一个指向内存中数据的名字。\n例子: x = 42, 这里 x 就是变量, 指向整数 42。"},
-        # few-shot 示例 2
-        {"role": "user", "content": "什么是函数?"},
-        {"role": "assistant", "content": "概念: 函数\n一句话: 一段可复用的代码块, 接收输入返回输出。\n例子: def add(a, b): return a + b"},
-        # 真正的问题
-        {"role": "user", "content": "什么是闭包?"},
-    ])
+    chat_with_messages(
+        [
+            {
+                "role": "system",
+                "content": "你是一个编程概念解释助手, 回答控制在50字以内。用固定格式回答。",
+            },
+            # few-shot 示例 1
+            {"role": "user", "content": "什么是变量?"},
+            {
+                "role": "assistant",
+                "content": "概念: 变量\n一句话: 一个指向内存中数据的名字。\n例子: x = 42, 这里 x 就是变量, 指向整数 42。",
+            },
+            # few-shot 示例 2
+            {"role": "user", "content": "什么是函数?"},
+            {
+                "role": "assistant",
+                "content": "概念: 函数\n一句话: 一段可复用的代码块, 接收输入返回输出。\n例子: def add(a, b): return a + b",
+            },
+            # 真正的问题
+            {"role": "user", "content": "什么是闭包?"},
+        ]
+    )
     print()
 
     # ============================================================
@@ -166,30 +181,48 @@ if __name__ == "__main__":
     print()
 
     print("--- 正常风格 ---")
-    chat_with_messages([
-        {"role": "system", "content": "你是一个 Python 助手, 回答控制在50字以内。"},
-        {"role": "user", "content": "Python 的 GIL 是什么?"},
-    ])
+    chat_with_messages(
+        [
+            {"role": "system", "content": "你是一个 Python 助手, 回答控制在50字以内。"},
+            {"role": "user", "content": "Python 的 GIL 是什么?"},
+        ]
+    )
     print()
 
     print("--- 东北话风格 (通过 assistant 示范) ---")
-    chat_with_messages([
-        {"role": "system", "content": "你是一个 Python 助手, 用东北话回答, 回答控制在50字以内。"},
-        # 用一条 assistant 消息示范风格
-        {"role": "user", "content": "列表和元组有啥区别?"},
-        {"role": "assistant", "content": "哎呀妈呀, 这俩玩意儿区别老大了! 列表就是个能改的筐, 你随便往里扔东西拿东西; 元组就是个封死的盒子, 装好了就别想动了。记住: 列表用方括号[], 元组用圆括号(), 就这么简单, 整不了那花里胡哨的!"},
-        # 真正的问题
-        {"role": "user", "content": "Python 的 GIL 是什么?"},
-    ])
+    chat_with_messages(
+        [
+            {
+                "role": "system",
+                "content": "你是一个 Python 助手, 用东北话回答, 回答控制在50字以内。",
+            },
+            # 用一条 assistant 消息示范风格
+            {"role": "user", "content": "列表和元组有啥区别?"},
+            {
+                "role": "assistant",
+                "content": "哎呀妈呀, 这俩玩意儿区别老大了! 列表就是个能改的筐, 你随便往里扔东西拿东西; 元组就是个封死的盒子, 装好了就别想动了。记住: 列表用方括号[], 元组用圆括号(), 就这么简单, 整不了那花里胡哨的!",
+            },
+            # 真正的问题
+            {"role": "user", "content": "Python 的 GIL 是什么?"},
+        ]
+    )
     print()
 
     print("--- 古文风格 (通过 assistant 示范) ---")
-    chat_with_messages([
-        {"role": "system", "content": "你是一个 Python 助手, 用文言文回答, 回答控制在50字以内。"},
-        {"role": "user", "content": "列表和元组有啥区别?"},
-        {"role": "assistant", "content": "列表者, 可增可删之容器也, 以方括号括之; 元组者, 一经铸成便不可更改, 以圆括号括之。二者形似而性异, 用之当审慎择之。"},
-        {"role": "user", "content": "Python 的 GIL 是什么?"},
-    ])
+    chat_with_messages(
+        [
+            {
+                "role": "system",
+                "content": "你是一个 Python 助手, 用文言文回答, 回答控制在50字以内。",
+            },
+            {"role": "user", "content": "列表和元组有啥区别?"},
+            {
+                "role": "assistant",
+                "content": "列表者, 可增可删之容器也, 以方括号括之; 元组者, 一经铸成便不可更改, 以圆括号括之。二者形似而性异, 用之当审慎择之。",
+            },
+            {"role": "user", "content": "Python 的 GIL 是什么?"},
+        ]
+    )
     print()
 
     # ============================================================
@@ -202,12 +235,17 @@ if __name__ == "__main__":
 
     # 场景: 模型上次回答被截断了(或你想让它继续展开), 把上次回复放到 assistant 中
     print("--- 模拟: 上次回答只说了一半, 让模型接着说 ---")
-    chat_with_messages([
-        {"role": "system", "content": "你是一个编程助手, 回答控制在50字以内。"},
-        {"role": "user", "content": "Python 有哪些常用数据结构?"},
-        {"role": "assistant", "content": "Python 常用数据结构有: 1. 列表(list) 2. 元组(tuple) 3. 字典(dict)"},
-        {"role": "user", "content": "继续"},
-    ])
+    chat_with_messages(
+        [
+            {"role": "system", "content": "你是一个编程助手, 回答控制在50字以内。"},
+            {"role": "user", "content": "Python 有哪些常用数据结构?"},
+            {
+                "role": "assistant",
+                "content": "Python 常用数据结构有: 1. 列表(list) 2. 元组(tuple) 3. 字典(dict)",
+            },
+            {"role": "user", "content": "继续"},
+        ]
+    )
     print()
 
     # ============================================================
@@ -218,7 +256,10 @@ if __name__ == "__main__":
     print("=" * 60)
     print()
 
-    system_msg = {"role": "system", "content": "你只能用英文回答, 绝对不能用中文, 回答控制在50字以内。"}
+    system_msg = {
+        "role": "system",
+        "content": "你只能用英文回答, 绝对不能用中文, 回答控制在50字以内。",
+    }
     user_msg = {"role": "user", "content": "什么是递归?"}
 
     for label, model, url in [
@@ -236,11 +277,15 @@ if __name__ == "__main__":
         print()
 
         print("--- system 夹在中间: [user1, system, user2] ---")
-        chat_with_messages([
-            {"role": "user", "content": "你好"},
-            system_msg,
-            {"role": "user", "content": "什么是递归?"},
-        ], model=model, url=url)
+        chat_with_messages(
+            [
+                {"role": "user", "content": "你好"},
+                system_msg,
+                {"role": "user", "content": "什么是递归?"},
+            ],
+            model=model,
+            url=url,
+        )
         print()
 
     # ============================================================

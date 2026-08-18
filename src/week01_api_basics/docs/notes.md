@@ -138,9 +138,9 @@ sudo systemctl restart ollama   # 重启
 ```python
 SCENARIO_CONFIGS = {
     "creative_writing": {"temperature": 0.9, "top_p": 0.95},  # 创造性写作
-    "code_generation":  {"temperature": 0.2, "top_p": 0.8},   # 代码生成
-    "factual_qa":       {"temperature": 0.1, "top_p": 0.7},   # 事实性问答
-    "translation":      {"temperature": 0.3, "top_p": 0.8},   # 翻译
+    "code_generation": {"temperature": 0.2, "top_p": 0.8},  # 代码生成
+    "factual_qa": {"temperature": 0.1, "top_p": 0.7},  # 事实性问答
+    "translation": {"temperature": 0.3, "top_p": 0.8},  # 翻译
 }
 ```
 

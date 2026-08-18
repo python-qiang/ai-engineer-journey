@@ -185,11 +185,13 @@ def list_sessions() -> list[dict]:
             )
         except (OSError, json.JSONDecodeError):
             preview = "(无法读取)"
-        sessions.append({
-            "id": sid,
-            "time": time.strftime("%m-%d %H:%M", time.localtime(mtime)),
-            "preview": preview,
-        })
+        sessions.append(
+            {
+                "id": sid,
+                "time": time.strftime("%m-%d %H:%M", time.localtime(mtime)),
+                "preview": preview,
+            }
+        )
     return sessions
 
 
@@ -201,7 +203,9 @@ if __name__ == "__main__":
 
     print("=== 欢迎使用多轮对话 CLI ===")
     print(f"当前会话: {session_id}")
-    print("指令: /new (新建), /save (保存), /load (加载), /list (列出会话), quit/exit (退出)")
+    print(
+        "指令: /new (新建), /save (保存), /load (加载), /list (列出会话), quit/exit (退出)"
+    )
 
     while True:
         try:
@@ -273,7 +277,9 @@ if __name__ == "__main__":
                         session_id = target_id
                         total_completion_tokens = 0
                         total_prompt_tokens = 0
-                        print(f"--- 已加载会话 {session_id} ({len(messages)} 条消息) ---")
+                        print(
+                            f"--- 已加载会话 {session_id} ({len(messages)} 条消息) ---"
+                        )
                     else:
                         print("--- 文件格式不正确 ---")
                 except (OSError, json.JSONDecodeError) as e:
@@ -310,9 +316,13 @@ if __name__ == "__main__":
                             print(f"\n[对话轮数: {(len(messages) - 1) // 2}]")
                     else:
                         if finish_reason == "length":
-                            print("[⚠️ 未生成内容: input tokens 已占满 context window, 无空间生成回复]")
+                            print(
+                                "[⚠️ 未生成内容: input tokens 已占满 context window, 无空间生成回复]"
+                            )
                         else:
-                            print(f"[AI 未返回有效内容, finish_reason: {finish_reason}]")
+                            print(
+                                f"[AI 未返回有效内容, finish_reason: {finish_reason}]"
+                            )
 
                 except (httpx.HTTPError, RuntimeError) as e:
                     print(f"\n--- 请求异常: {e} ---")

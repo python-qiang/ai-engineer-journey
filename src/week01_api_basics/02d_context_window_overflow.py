@@ -44,7 +44,10 @@ def call_api(user_message: str, max_completion_tokens: int | None = None) -> dic
     payload = {
         "model": DEFAULT_MODEL,
         "messages": [
-            {"role": "system", "content": "你是一个助手, 回答请保持简洁和专业, 尽量控制在200字以内。"},
+            {
+                "role": "system",
+                "content": "你是一个助手, 回答请保持简洁和专业, 尽量控制在200字以内。",
+            },
             {"role": "user", "content": user_message},
         ],
         "temperature": 1.0,
@@ -94,11 +97,16 @@ if __name__ == "__main__":
 
     # 大问题: 读取 test_data 中的长文档, 让模型总结
     test_data_dir = os.path.join(os.path.dirname(__file__), "test_data")
-    with open(os.path.join(test_data_dir, "chinese_long_text.txt"), "r", encoding="utf-8") as f:
+    with open(
+        os.path.join(test_data_dir, "chinese_long_text.txt"), "r", encoding="utf-8"
+    ) as f:
         long_doc = f.read()
     big_question = f"请用3句话总结以下文档的核心内容:\n\n{long_doc}"
 
-    for label, question in [("小问题", small_question), ("大问题(读5000字文档)", big_question)]:
+    for label, question in [
+        ("小问题", small_question),
+        ("大问题(读5000字文档)", big_question),
+    ]:
         result = call_api(question)
         if result["success"]:
             print(f"[{label}]")
@@ -121,7 +129,11 @@ if __name__ == "__main__":
     # question = "请简单列举Python的2个核心特性"
 
     for max_tok in [20, 50, 100, None]:
-        label = f"max_completion_tokens={max_tok}" if max_tok else "max_completion_tokens=不限制"
+        label = (
+            f"max_completion_tokens={max_tok}"
+            if max_tok
+            else "max_completion_tokens=不限制"
+        )
         result = call_api(question, max_completion_tokens=max_tok)
 
         if result["success"]:
@@ -132,9 +144,9 @@ if __name__ == "__main__":
             print(f"  回答: {result['content']}")
             print()
             # finish_reason 说明:
-                # 触发输入参数中的stop参数, 或自然停止输出时为stop;
-                # 生成长度过长而结束为length;
-                # 需要调用工具而结束为tool_calls。
+            # 触发输入参数中的stop参数, 或自然停止输出时为stop;
+            # 生成长度过长而结束为length;
+            # 需要调用工具而结束为tool_calls。
         else:
             print(f"[{label}] 失败: {result['error']}")
             print()

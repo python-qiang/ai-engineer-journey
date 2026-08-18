@@ -86,7 +86,9 @@ def chat(
     )
 
     if response.status_code != 200:
-        raise RuntimeError(f"API 调用失败: HTTP {response.status_code}\n{response.text}")
+        raise RuntimeError(
+            f"API 调用失败: HTTP {response.status_code}\n{response.text}"
+        )
 
     data = response.json()
     return {
@@ -120,4 +122,4 @@ if __name__ == "__main__":
     print("=== 示例3: temperature=0 (确定性) ===")
     for i in range(3):
         result = chat("1+1等于几? 只回答数字。", temperature=0)
-        print(f"  第{i+1}次: {result['reply']}")
+        print(f"  第{i + 1}次: {result['reply']}")

@@ -46,7 +46,11 @@ if not API_KEY:
     raise RuntimeError("BEIJING_API_KEY 未设置, 请确认 direnv 已加载")
 
 
-def call_api(question: str, system_prompt: str = "你是一个简洁的助手, 回答问题控制在200字以内。", **kwargs) -> str:
+def call_api(
+    question: str,
+    system_prompt: str = "你是一个简洁的助手, 回答问题控制在200字以内。",
+    **kwargs,
+) -> str:
     """调用 API, 支持传入任意额外参数。"""
     headers = {
         "Authorization": f"Bearer {API_KEY}",
@@ -80,7 +84,6 @@ def call_api(question: str, system_prompt: str = "你是一个简洁的助手, �
 
 
 if __name__ == "__main__":
-
     # ============================================================
     # 实验1: Top-p 对比
     # ============================================================
@@ -95,7 +98,7 @@ if __name__ == "__main__":
         print(f"  --- top_p={top_p} (跑3次) ---")
         for i in range(3):
             reply = call_api(question, temperature=1.0, top_p=top_p)
-            print(f"    [{i+1}] {reply}")
+            print(f"    [{i + 1}] {reply}")
         print()
 
     # ============================================================

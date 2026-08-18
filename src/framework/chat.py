@@ -37,11 +37,10 @@ def stream_chat(
         print_content: 是否打印回复内容到终端
 
     Returns:
-        {
-            "content": str,          # 完整回复
-            "usage": dict | None,    # token 统计
-            "finish_reason": str | None,  # stop/length/tool_calls
-        }
+        (content, usage, finish_reason) tuple:
+            content: str - full response text
+            usage: dict | None - token statistics
+            finish_reason: str | None - stop/length/tool_calls
     """
     headers = {"Content-Type": "application/json"}
     if "dashscope" in url:
@@ -65,7 +64,11 @@ def stream_chat(
     finish_reason = None
 
     with httpx.stream(
-        "POST", url, headers=headers, json=payload, timeout=httpx.Timeout(120.0, connect=10.0)
+        "POST",
+        url,
+        headers=headers,
+        json=payload,
+        timeout=httpx.Timeout(120.0, connect=10.0),
     ) as resp:
         if resp.status_code != 200:
             error = resp.read().decode()
@@ -107,7 +110,12 @@ def stream_chat(
             # 正文内容
             content = delta.get("content", "")
             if content:
-                if not reasoning_done and reasoning_content and show_thinking and print_content:
+                if (
+                    not reasoning_done
+                    and reasoning_content
+                    and show_thinking
+                    and print_content
+                ):
                     print("\n--- 思考完毕 ---\n")
                     reasoning_done = True
                 full_content += content
@@ -121,8 +129,4 @@ def stream_chat(
     if print_content:
         print()  # 换行
 
-    return {
-        "content": full_content,
-        "usage": usage_info,
-        "finish_reason": finish_reason,
-    }
+    return full_content, usage_info, finish_reason

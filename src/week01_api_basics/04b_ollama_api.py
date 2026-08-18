@@ -177,27 +177,37 @@ if __name__ == "__main__":
     # Case 1: 流式, 无思考
     print("=== Case 1: stream=True, thinking=False ===")
     result = stream_chat(question)
-    print(f"输出: {len(result['content'])} 字符 | {result['usage']['total_tokens']} tokens | {result['total_time']:.2f}s")
+    print(
+        f"输出: {len(result['content'])} 字符 | {result['usage']['total_tokens']} tokens | {result['total_time']:.2f}s"
+    )
     print()
 
     # Case 2: 流式, 有思考
     print("=== Case 2: stream=True, thinking=True ===")
     result = stream_chat(question, enable_thinking=True)
-    print(f"输出: {len(result['content'])} 字符 | 思维链: {len(result['reasoning_content'])} 字符 | {result['usage']['total_tokens']} tokens | {result['total_time']:.2f}s")
+    print(
+        f"输出: {len(result['content'])} 字符 | 思维链: {len(result['reasoning_content'])} 字符 | {result['usage']['total_tokens']} tokens | {result['total_time']:.2f}s"
+    )
     print()
 
     # Case 3: 非流式, 无思考
     print("=== Case 3: stream=False, thinking=False ===")
     result = stream_chat(question, stream=False)
-    print(f"输出: {len(result['content'])} 字符 | {result['usage']['total_tokens']} tokens | {result['total_time']:.2f}s")
+    print(
+        f"输出: {len(result['content'])} 字符 | {result['usage']['total_tokens']} tokens | {result['total_time']:.2f}s"
+    )
     print()
 
     # Case 4: 非流式, 有思考 (可以看到 reasoning_content)
     print("=== Case 4: stream=False, thinking=True ===")
     result = stream_chat(question, stream=False, enable_thinking=True)
-    print(f"输出: {len(result['content'])} 字符 | {result['usage']['total_tokens']} tokens | {result['total_time']:.2f}s")
-    if result['reasoning_content']:
-        print(f"思维链 ({len(result['reasoning_content'])} 字符): {result['reasoning_content'][:200]}...")
+    print(
+        f"输出: {len(result['content'])} 字符 | {result['usage']['total_tokens']} tokens | {result['total_time']:.2f}s"
+    )
+    if result["reasoning_content"]:
+        print(
+            f"思维链 ({len(result['reasoning_content'])} 字符): {result['reasoning_content'][:200]}..."
+        )
     else:
         print("思维链: 无 (可能 Ollama 不返回此字段)")
     print()
