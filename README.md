@@ -82,6 +82,6 @@ python src/week01_api_basics/01a_http_call.py
 - [x] Week 1 Section 5: 参数调优实验 (temperature, top_p, penalty, stop)
 - [x] Week 2 Section 1: 消息角色体系 (system prompt, few-shot, 越狱测试)
 - [x] Week 2 Section 2: 多轮对话实现 (CLI, token追踪, session管理)
-- [ ] Week 2 Section 3: 上下文窗口管理策略
+- [ ] Week 2 Section 3: 上下文窗口管理策略 (滑动窗口✅, 摘要压缩✅, 动态prompt进行中)
 - [ ] Week 2 Section 4: Prompt 核心技巧
 - [ ] Week 2 Section 5: Prompt 模板化工程
