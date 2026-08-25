@@ -316,6 +316,13 @@
   - 确保每次请求不超过模型的 context window
 ```
 
+**最终实现的统一架构（经过 03a/03b 迭代后确定）：**
+
+- 水位线机制（_waterline）：标记已处理到第几轮，两种策略共用
+- 阈值触发（threshold）：攒够 N 轮才触发，两次触发之间保留全部上下文
+- messages 永不删除：和 Kiro/Codex 的 jsonl 持久化一致
+- 渐进式结构化摘要：参考 OpenAI Codex + DeepSeek Harness + Kiro 三家方案
+
 ##### 4. Prompt 核心技巧
 
 **要做什么：** 掌握让大模型输出更准确、更可控的关键 Prompt 技术。

@@ -5,11 +5,14 @@ framework/chat.py - 统一的流式对话函数
 """
 
 import json
+import logging
 import os
 
 import httpx
 
 from framework.consts import DEFAULT_MODEL, beijing_openai_base_http_api_url
+
+logger = logging.getLogger(__name__)
 
 API_KEY = os.environ.get("BEIJING_API_KEY")
 if not API_KEY:
@@ -63,6 +66,8 @@ def stream_chat(
     usage_info = None
     finish_reason = None
 
+    logger.debug("stream_chat: model=%s, messages=%d, url=%s", model, len(messages), url[:40])
+
     with httpx.stream(
         "POST",
         url,
@@ -72,6 +77,7 @@ def stream_chat(
     ) as resp:
         if resp.status_code != 200:
             error = resp.read().decode()
+            logger.error("API error: HTTP %d - %s", resp.status_code, error[:100])
             raise RuntimeError(f"HTTP {resp.status_code}: {error[:200]}")
 
         for line in resp.iter_lines():

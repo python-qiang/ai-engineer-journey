@@ -3,21 +3,25 @@
 
 === 本任务完成后你需要掌握的 ===
 
-1. 滑动窗口策略:
-   - self.messages 始终保存完整历史(不丢数据)
-   - 发送给 API 前, _apply_strategy() 返回精简版 messages
-   - 精简逻辑: system + [省略提示] + pinned + 最近 N 轮
-   - N 的选择: 太小容易失忆, 太大浪费 token (默认 5)
+1. 滑动窗口策略(与 summary 共享统一架构):
+   - self.messages 始终保存完整历史(永不删除)
+   - 水位线(_waterline): 标记已处理到第几轮
+   - 触发条件: 水位线之上的非 pinned 轮数 > threshold
+   - 触发时: 推进水位线(不调 API), omit notice 显示累计省略数
+   - 两次触发之间: 发送水位线之上的所有轮次(逐轮累积上下文)
 
 2. Pinned Messages:
-   - /pin 将上一轮(user+assistant)加入 pinned_messages 列表
-   - 用 pinned_rounds set 防止重复 pin 同一轮
-   - pinned 不计入 N 轮计数, 截断时强制保留
-   - 相同问题不同轮次可以分别 pin(回答可能不同)
+   - /pin 将上一轮加入 pinned_messages(用 total_rounds 标识)
+   - pinned_rounds set 防止重复 pin
+   - pinned 在水位线之上不计入 pending(不触发截断)
+   - 发送时 pinned 始终保留, 不受截断影响
 
-3. 截断后的提示:
-   - 有历史被省略时, 插入一条 system 消息告知模型
-   - 让模型知道"前面有上下文但看不到了, 需要时可以问用户"
+3. 统一的策略机制(sliding_window 和 summary 共用):
+   - threshold: 用户配置, 攒够多少轮才触发
+   - _KEEP_RECENT: 内部常量(=2), 触发时保留几轮
+   - _waterline: 水位线, 两种策略共用
+   - _count_pending_rounds(): 水位线之上的非 pinned 轮数
+   - _get_rounds_above_waterline(): 取水位线之上的非 pinned 轮次号
 
 === 本任务不需要关心的 ===
 
@@ -28,24 +32,22 @@
 === 练习 ===
 
 在 Session class (common/sessions.py) 中实现:
-  - __init__ 新增参数: strategy(str|None), window_size(int=5)
-  - pin(): 将上一轮加入 pinned, 带防重复(pinned_rounds set)
-  - pins(): 打印当前所有 pinned 消息
-  - _apply_strategy(): 根据 strategy 返回实际发送的 messages
-  - _sliding_window(): system + [省略提示] + pinned + recent N 轮
+  - __init__: strategy, threshold, total_rounds, _waterline, pinned_rounds
+  - pin() / pins(): 管理 pinned 消息
+  - _apply_strategy(): 路由到 _sliding_window() 或 _summary_compress()
+  - _sliding_window(): 超阈值推进水位线, 构造 system + omit + pinned + above_waterline
 
 在 03a CLI 中:
-  - 创建 Session 时传入 strategy="sliding_window", window_size=5
-  - /pin 和 /pins 命令路由到 session.pin() / session.pins()
-  - 测试: 聊 10+ 轮, 验证模型忘了早期内容但还记得 pinned 内容
+  - Session(strategy="sliding_window", threshold=5)
+  - match-case 路由 /pin /pins /new /save /load /list 命令
+  - 测试: 聊 10+ 轮, 验证 threshold 触发后 sent 下降, 然后逐轮累积
 
 === 提示 ===
 
-- self.messages 保存完整历史, _sliding_window() 只负责构造发送版本
-- 发送的 messages 顺序: [system, omit_notice?, *pinned, *recent]
-- omit_notice 示例: {"role": "system", "content": "[X rounds of history omitted]"}
-- pinned 中的消息要从 recent 中排除(避免重复发送)
-- 复用 framework/chat.py 的 stream_chat()
+- self.messages 永不删除, _sliding_window() 只构造发送版本(必须返回 copy)
+- omit 数量是累计值(水位线之下的非 pinned 轮数)
+- 水位线之上的所有轮次都发送(不只是 _KEEP_RECENT)
+- _KEEP_RECENT 只在触发时决定"砍完保留几轮"
 """
 
 # ============================================================
@@ -55,13 +57,13 @@
 from common.sessions import Session
 
 if __name__ == "__main__":
-    session = Session(strategy="sliding_window", window_size=5)
+    session = Session(strategy="sliding_window", threshold=5)
 
     print("=== Multi-turn Chat CLI (Sliding Window) ===")
     print(
-        f"Session: {session.session_id} | Strategy: {session.strategy} | Window: {session.window_size}"
+        f"Session: {session.session_id} | Strategy: {session.strategy} | Threshold: {session.threshold}"
     )
-    print("Commands: /new /save /load /list /pin /pins /quit | /exit")
+    print("Commands: /new /save /load /list /pin /pins /quit /exit")
 
     while True:
         try:
@@ -76,24 +78,17 @@ if __name__ == "__main__":
         match user_input:
             case "/quit" | "/exit":
                 break
-
             case "/new":
                 session.new()
-
             case "/save":
                 session.save()
-
             case "/load":
                 session.load()
-
             case "/list":
                 session.list_sessions()
-
             case "/pin":
                 session.pin()
-
             case "/pins":
                 session.pins()
-
             case _:
                 session.chat(user_input)

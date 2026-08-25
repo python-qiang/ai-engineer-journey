@@ -4,6 +4,12 @@
 
 - [1. Messages 三角色与 Prompt Engineering 的关系](#1-messages-三角色与-prompt-engineering-的关系)
 - [2. Messages 数组实验结论](#2-messages-数组实验结论)
+- [3. Python 可变对象引用陷阱](#3-python-可变对象引用陷阱)
+- [4. API 内容安全过滤导致流式中断](#4-api-内容安全过滤导致流式中断)
+- [5. 03a 滑动窗口实战总结](#5-03a-滑动窗口实战总结)
+- [6. 上下文管理策略选型 — 贴合产品定位](#6-上下文管理策略选型--贴合产品定位)
+- [7. 03b 摘要压缩 — 统一架构设计历程](#7-03b-摘要压缩--统一架构设计历程)
+- [7. API 协议演进与开发者策略](#7-api-协议演进与开发者策略)
 
 ---
 
@@ -144,7 +150,7 @@ def get_messages(self):
 | Sent messages | 稳定 17 条 | 不随轮数增长, 窗口生效 |
 | Input tokens | 5000-7000 徘徊 | 不再线性增长, 成本可控 |
 | Pinned 内容 | 始终保留 | pin 的"大话数据结构"话题一直被模型记住 |
-| 非 pinned 早期内容 | 被遗忘 | 第3轮说的"我叫张强"在第19轮已被忘记 |
+| 非 pinned 早期内容 | 被遗忘 | 第3轮说的"我叫小明"在第19轮已被忘记 |
 
 17 条的组成: system(1) + omit_notice(1) + pinned(4) + recent_5_rounds(10) + current_user(1)
 
@@ -177,3 +183,145 @@ def get_messages(self):
 
 这些正是 03b(摘要压缩) 和 03c(动态 prompt + token 预算) 要解决的.
 一步步来, 先把地基打牢.
+
+---
+
+## 6. 上下文管理策略选型 — 贴合产品定位
+
+### 6.1 主流产品的策略对比
+
+| 产品 | 策略 | 用户感知 | 适合场景 |
+|------|------|----------|----------|
+| Gemini | 不压缩, 靠超大窗口(1-2M), 满了提醒开新 session | 透明 | 简单对话, 大窗口兜底 |
+| ChatGPT | 满了推荐新 session, 自动 summary 带入新对话 | 半透明 | 消费级通用对话 |
+| 豆包 | 后台静默 compact + 全局 memory 持久化, 用户永远看到同一个 session | 完全无感知 | 企业级/长期陪伴型 |
+| Kiro/Cursor | 自动 compact + 手动 /compact, 过程有提示 | 半透明 | 开发者工具 |
+
+### 6.2 不同策略的设计哲学
+
+- **不压缩(Gemini)**: 用硬件(超大 context)解决软件问题. 简单但贵.
+- **提醒用户新开 session(ChatGPT)**: 把决策权交给用户, 产品逻辑简单.
+- **后台静默管理(豆包)**: 最复杂但体验最好. 需要 summary + 全局 memory + 持久化.
+- **透明可见的自动管理(Kiro)**: 适合开发者 — 我们既要自动化, 也要能看到发生了什么.
+
+### 6.3 我们的 CLI 产品定位与策略选择
+
+定位: AI 学习助手的实验性 CLI 工具, 面向单个开发者, 用于理解底层原理.
+
+选择: Kiro/Cursor 模式(透明可见的自动管理)
+- 自动压缩但打印过程(token 使用率, 压缩提示)
+- 支持手动 /compact
+- 不追求"无感知" — 看到压缩过程本身就是学习目的
+- 策略可切换(sliding_window / summary) — 方便对比实验
+
+### 6.4 核心认知
+
+**没有"最好的"上下文管理策略, 只有"最适合当前产品定位"的策略.**
+- 消费级产品追求无感知体验 -> 后台静默管理
+- 开发者工具追求可观测性 -> 透明 + 手动控制
+- 学习项目追求理解原理 -> 所有过程可见, 可对比
+
+这就是为什么我们在 03a/03b/03c 中逐步实现多种策略, 而不是只选一种.
+
+
+---
+
+## 7. API 协议演进与开发者策略
+
+### 7.1 Chat Completions vs Responses API
+
+| 维度 | Chat Completions | Responses API |
+|------|-----------------|---------------|
+| 定位 | 为聊天而生的无状态协议 | 为 Agent 设计的有状态协议 |
+| 状态管理 | 每次发完整 messages 数组 | 支持 previous_response_id 服务端记忆 |
+| 工具调用 | 需自己实现 function calling 循环 | 内置 web_search/code_interpreter 等 |
+| 输出格式 | 统一的 choices[].message | 类型化的 output 数组(message/reasoning/function_call) |
+| 生态兼容性 | 所有 provider 都支持(事实标准) | OpenAI 主推, 阿里/DeepSeek 跟进, Anthropic 走自己的路 |
+
+### 7.2 为什么各家 API 不统一
+
+- OpenAI 先发定义了 Chat Completions, 成为事实标准
+- 其他家"兼容但扩展": 阿里有 DashScope + OpenAI 兼容, Anthropic 有 Messages API
+- 每家有自己的产品策略和差异化功能(如阿里的 enable_search, Anthropic 的 system 独立参数)
+
+### 7.3 开发者应该关注什么
+
+1. **理解协议本质**(Week 1-4): messages/streaming/function calling 的数据流, 不管 API 怎么变这些概念不变
+2. **掌握一个框架**(Week 9): LangChain/LiteLLM 做适配层, 一行代码切换 provider
+3. **不需要背各家差异**: 遇到时查文档
+4. **不需要专门学 Responses API**: 框架会处理协议选择, 核心概念已通过 Chat Completions 掌握
+
+### 7.4 原始 API / 官方 SDK / 框架的分工
+
+```
+你(业务代码) -> 框架(LangChain) -> 官方 SDK(openai/dashscope) -> 原始 HTTP API -> provider
+```
+
+| 层 | 谁用 | 价值 |
+|----|------|------|
+| 原始 HTTP API | 学习者 / 极致性能需求 | 理解底层, 零抽象开销 |
+| 官方 SDK (pip package) | 框架开发者 / 单 provider 团队 | 类型安全, 封装了 HTTP 细节 |
+| 框架 (LangChain) | 应用开发者 | 统一接口, 自由切换 provider, 解耦 |
+
+### 7.5 我们的学习路径与协议的关系
+
+- Week 1-4: 手写 HTTP 调 Chat Completions (理解本质, 体会"换 provider 要改一堆代码"的痛)
+- Week 9: 引入 LangChain (理解框架的价值: 解耦, 不是偷懒)
+- Week 12: Agent + MCP (如果内置工具有价值, 顺手了解 Responses API 即可)
+
+---
+
+## 7. 03b 摘要压缩 — 统一架构设计历程
+
+### 7.1 核心设计决策的演变
+
+| 问题 | 初始方案 | 最终方案 | 为什么改 |
+|------|---------|---------|---------|
+| messages 是否删除 | compact 时删除旧消息 | 永不删除, 保留完整历史 | 和 Kiro jsonl 一致, save 时数据完整 |
+| 两种策略的 messages 行为 | 不同(sliding 不删, summary 删) | 统一不删 | 代码对称, 逻辑简单 |
+| keep_recent + threshold | 两个变量, 含义重叠 | threshold(用户配置) + _KEEP_RECENT(内部常量) | 职责分离清晰 |
+| 何时触发策略 | 每轮都截断 | 攒够 threshold 才触发 | 尽可能保留上下文, 回答才准确 |
+| 两次触发之间发什么 | 只发 _KEEP_RECENT 轮 | 发水位线之上所有轮次 | 不浪费已有上下文 |
+| rounds 计数 | _current_rounds (基于 messages 长度) | total_rounds (手动+1, 只增不减) | 和 pin 的轮次号绑定, 不受 compact 影响 |
+| 避免重复压缩 | 无机制 | _waterline 水位线 | 记录已处理到哪一轮 |
+
+### 7.2 waterline(水位线) 机制
+
+水位线是整个架构的核心概念:
+- `_waterline = N` 表示第 1~N 轮已经被处理过(omitted 或 summarized)
+- `_count_pending_rounds()` = 水位线之上的非 pinned 轮数
+- 触发条件: pending > threshold
+- 触发后: 水位线推进, pending 回到 _KEEP_RECENT
+
+两种策略共享同一套机制, 区别只是:
+- sliding_window: 推进水位线(免费, 不调 API), 发送时用 omit notice
+- summary: 调 compact()(调一次 API 生成摘要), 发送时用 checkpoint
+
+### 7.3 渐进式结构化摘要 (参考 Codex + DSH + Kiro)
+
+COMPACTION_PROMPT 设计要点:
+- 5 个固定 section: 用户信息 / 关键事实与决定 / 已完成 / 待完成 / 当前状态
+- 渐进式: 新 summary = 旧 summary 中仍正确的 + 新对话要点
+- 精确保留: 姓名/数字/路径等不能被模糊化
+- 字数控制: 300 字以内, 防止 summary 无限膨胀
+- Preamble: 放回 context 时告诉模型"这是背景, 不要复述"
+
+### 7.4 对比测试结果 (threshold=8, 20 轮对话)
+
+| 信息 | 轮次 | Pinned? | Sliding Window | Summary |
+|------|------|---------|:-:|:-:|
+| 小明 | 2 | ✅ | ✅ 记住 | ✅ 记住 |
+| Python 偏好 | 5 | ✅ | ✅ 记住 | ✅ 记住 |
+| FastAPI | 8 | ❌ | ✅ (回复携带) | ✅ (在 summary 中) |
+| Deadline 下周五 | 12 | ❌ | ❌ 忘了 | ✅ 记住 |
+| DB Schema | 15 | ❌ | ❌ 忘了 | ❌ 模糊(被摘要简化) |
+
+结论: Summary 策略信息保留明显优于 Sliding Window, 但有一次 API 调用的成本.
+
+### 7.5 关键踩坑
+
+1. **pinned_rounds 和 waterline 的交互**: pinned 在水位线之上才算"pending", 之下的不用再减
+2. **sliding_window 不能每轮都切**: 要攒够 threshold, 两次触发之间逐轮累积上下文
+3. **_get_rounds_above_waterline() 复用**: 同一段逻辑写了 3 次才发现要封装
+4. **class 变量命名冲突**: `list` 方法名覆盖了 Python 内置 `list`, 导致类型注解报错
+5. **变量命名语义**: keep_recent/threshold/KEEP_RECENT 三者职责要清晰分离
