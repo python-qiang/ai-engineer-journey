@@ -8,8 +8,9 @@
 - [4. API 内容安全过滤导致流式中断](#4-api-内容安全过滤导致流式中断)
 - [5. 03a 滑动窗口实战总结](#5-03a-滑动窗口实战总结)
 - [6. 上下文管理策略选型 — 贴合产品定位](#6-上下文管理策略选型--贴合产品定位)
-- [7. 03b 摘要压缩 — 统一架构设计历程](#7-03b-摘要压缩--统一架构设计历程)
 - [7. API 协议演进与开发者策略](#7-api-协议演进与开发者策略)
+- [8. 03b 摘要压缩 — 统一架构设计历程](#8-03b-摘要压缩--统一架构设计历程)
+- [9. 千问 Token 计算详解](#9-千问-token-计算详解)
 
 ---
 
@@ -271,9 +272,9 @@ def get_messages(self):
 
 ---
 
-## 7. 03b 摘要压缩 — 统一架构设计历程
+## 8. 03b 摘要压缩 — 统一架构设计历程
 
-### 7.1 核心设计决策的演变
+### 8.1 核心设计决策的演变
 
 | 问题 | 初始方案 | 最终方案 | 为什么改 |
 |------|---------|---------|---------|
@@ -285,7 +286,7 @@ def get_messages(self):
 | rounds 计数 | _current_rounds (基于 messages 长度) | total_rounds (手动+1, 只增不减) | 和 pin 的轮次号绑定, 不受 compact 影响 |
 | 避免重复压缩 | 无机制 | _waterline 水位线 | 记录已处理到哪一轮 |
 
-### 7.2 waterline(水位线) 机制
+### 8.2 waterline(水位线) 机制
 
 水位线是整个架构的核心概念:
 - `_waterline = N` 表示第 1~N 轮已经被处理过(omitted 或 summarized)
@@ -297,7 +298,7 @@ def get_messages(self):
 - sliding_window: 推进水位线(免费, 不调 API), 发送时用 omit notice
 - summary: 调 compact()(调一次 API 生成摘要), 发送时用 checkpoint
 
-### 7.3 渐进式结构化摘要 (参考 Codex + DSH + Kiro)
+### 8.3 渐进式结构化摘要 (参考 Codex + DSH + Kiro)
 
 COMPACTION_PROMPT 设计要点:
 - 5 个固定 section: 用户信息 / 关键事实与决定 / 已完成 / 待完成 / 当前状态
@@ -306,7 +307,7 @@ COMPACTION_PROMPT 设计要点:
 - 字数控制: 300 字以内, 防止 summary 无限膨胀
 - Preamble: 放回 context 时告诉模型"这是背景, 不要复述"
 
-### 7.4 对比测试结果 (threshold=8, 20 轮对话)
+### 8.4 对比测试结果 (threshold=8, 20 轮对话)
 
 | 信息 | 轮次 | Pinned? | Sliding Window | Summary |
 |------|------|---------|:-:|:-:|
@@ -318,10 +319,116 @@ COMPACTION_PROMPT 设计要点:
 
 结论: Summary 策略信息保留明显优于 Sliding Window, 但有一次 API 调用的成本.
 
-### 7.5 关键踩坑
+### 8.5 关键踩坑
 
 1. **pinned_rounds 和 waterline 的交互**: pinned 在水位线之上才算"pending", 之下的不用再减
 2. **sliding_window 不能每轮都切**: 要攒够 threshold, 两次触发之间逐轮累积上下文
 3. **_get_rounds_above_waterline() 复用**: 同一段逻辑写了 3 次才发现要封装
 4. **class 变量命名冲突**: `list` 方法名覆盖了 Python 内置 `list`, 导致类型注解报错
 5. **变量命名语义**: keep_recent/threshold/KEEP_RECENT 三者职责要清晰分离
+
+---
+
+## 9. 千问 Token 计算详解
+
+### 9.1 官方资料
+
+- [阿里 Token 计算 API](https://help.aliyun.com/zh/open-search/search-platform/developer-reference/token-calculation#b36dcf4191t3y) — OpenSearch 平台的 tokenizer 端点(非 DashScope)
+- [Qwen 官方 Tokenization 文档](https://qwen.readthedocs.io/en/latest/getting_started/concepts.html#tokens-tokenization)
+- [Qwen GitHub tokenization_note_zh.md](https://github.com/QwenLM/Qwen/blob/main/tokenization_note_zh.md) — 详细的 BPE 原理和注意事项
+
+### 9.2 Tokenizer 选择
+
+千问全系列使用 Byte-level BPE on UTF-8, 基于 tiktoken. 第三方包 `qwen-tokenizer` (pipenv install) 提供精确本地 tokenizer.
+
+两套 vocab (实测确认):
+| Generation | Vocab Size | 对应 tokenizer | 我们的 model |
+|---|---|---|---|
+| Qwen1/2/2.5 | 151,851 | `qwen2.5-72b-instruct` | `qwen2.5:1.5b` |
+| Qwen3/3.5/3.6+ | 248,077 | `qwen3.5-27b` | `qwen3.7-plus`, `qwen3:4b` |
+
+同 generation 内所有 size 共用同一个 vocab, 映射按大版本号做即可.
+
+### 9.3 Token 效率 (官方数据 + 实测)
+
+官方: "1 token ≈ 3~4 chars for English, 1.5~1.8 chars for Chinese"
+
+实测对比:
+- "你好世界" = 2 tokens (qwen3, 248K vocab)
+- "苹果" = 1 token (官方示例)
+- "测试用例" = 3 tokens (官方示例)
+- "OpenSearch" = 2 tokens (官方示例)
+
+千问对中文优化远超 OpenAI 系列 (cl100k_base 同样文本要多 50%+ tokens).
+
+### 9.4 Chat Template (ChatML 格式, 官方确认)
+
+官方文档明确: Qwen 使用 ChatML 格式, 每轮对话结构为:
+```
+<|im_start|>{{role}}
+{{content}}<|im_end|>
+```
+
+control tokens:
+- `<|im_start|>` (bot token): 每轮开始
+- `<|im_end|>` (eot token): 每轮结束
+- `<|endoftext|>` (eod token): 文档/对话结束
+- 无 bos/eos/unk/pad token
+
+完整对话示例:
+```
+<|im_start|>system
+You are a helpful assistant.<|im_end|>
+<|im_start|>user
+hello<|im_end|>
+<|im_start|>assistant
+Hi there!<|im_end|>
+```
+
+### 9.5 Thinking 模式的影响
+
+官方模板:
+```
+<|im_start|>assistant
+<think>
+{{thinking content}}
+</think>
+
+{{assistant content}}<|im_end|>
+```
+
+- `<think>` 和 `</think>` 是 special tokens (各 1 token)
+- enable_thinking=False 时, API 可能注入 `</think>` 强制跳过思考
+- 这解释了本地计算与 API 返回值的 ~4 token 差异
+
+### 9.6 Context Length (官方数据)
+
+| Model | 预训练序列长度 | 最大输出 (thinking) | 最大输出 (non-thinking) |
+|---|---|---|---|
+| Qwen3 | 32,768 (可扩展至 131,072) | 38,912 | 16,384 |
+| Qwen3-2507 | 262,144 (可扩展至 1M) | 81,920 | 16,384 |
+
+### 9.7 本地计算公式 (实测验证)
+
+```python
+total = sum(len(tok.encode(msg["content"])) + 5 for msg in messages) + 3 + 4
+```
+
+- +5/msg: `<|im_start|>`(1) + role(1) + `\n`(1) + `<|im_end|>`(1) + `\n`(1)
+- +3: 末尾 assistant prompt `<|im_start|>assistant\n`
+- +4: API 内部 overhead (thinking 相关, 固定值)
+
+精度验证: 本地 37 vs API 41, 差 4 tokens (固定 offset, 不随消息数增长).
+
+### 9.8 阿里官方 Token 计算途径
+
+- DashScope API (我们用的): 无独立 tokenizer 端点, 只在响应 `usage` 字段返回精确值
+- OpenSearch 平台: 有独立 `/tokenizer` API, 支持 ops-qwen-turbo/qwen-turbo/qwen-plus/qwen-max
+- 本地: `qwen-tokenizer` 包 (基于 tiktoken, 加载官方 BPE 文件)
+
+### 9.9 注意事项 (来自官方 tokenization_note)
+
+- BPE 基于 UTF-8 字节序列, 不保证按 Unicode 字符边界切分
+- 同一个词在不同上下文中可能被不同切分 (如 "Panda" vs " Panda")
+- special tokens 在 input 中默认会被当作 special 解析, 需注意注入攻击
+- 目前 `qwen-tokenizer` 默认 `allowed_special="all"`, 适合我们计算 token 的场景
