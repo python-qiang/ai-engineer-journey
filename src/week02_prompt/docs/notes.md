@@ -11,6 +11,7 @@
 - [7. API 协议演进与开发者策略](#7-api-协议演进与开发者策略)
 - [8. 03b 摘要压缩 — 统一架构设计历程](#8-03b-摘要压缩--统一架构设计历程)
 - [9. 千问 Token 计算详解](#9-千问-token-计算详解)
+- [10. Pin vs Memory vs Remember — 上下文记忆三件套](#10-pin-vs-memory-vs-remember--上下文记忆三件套)
 
 ---
 
@@ -432,3 +433,51 @@ total = sum(len(tok.encode(msg["content"])) + 5 for msg in messages) + 3 + 4
 - 同一个词在不同上下文中可能被不同切分 (如 "Panda" vs " Panda")
 - special tokens 在 input 中默认会被当作 special 解析, 需注意注入攻击
 - 目前 `qwen-tokenizer` 默认 `allowed_special="all"`, 适合我们计算 token 的场景
+
+---
+
+## 10. Pin vs Memory vs Remember — 上下文记忆三件套
+
+### 10.1 三者对比
+
+| | /pin | /remember key value | "记住..." (自然语言) |
+|--|------|---------------------|---------------------|
+| 存什么 | 完整 user+assistant 消息对 | 一个 key-value 事实 | 模型自动提取的 key-value |
+| 存在哪 | `pinned_messages` list | `self.memory` dict | `self.memory` dict |
+| 怎么用 | 作为独立消息拼接到发送版本 | 注入到 system prompt 的 [Memory] block | 同左 |
+| 体积 | 大 (整段对话原文) | 小 (一行) | 小 (一行) |
+| 受 waterline 影响 | 不受 (独立拼接) | 不受 (在 system prompt 里) | 不受 |
+| 触发 | 手动 /pin | 手动 /remember | 半自动: 用户说"记住", 提取自动 |
+| 例子 | pin 一整轮架构讨论 | /remember lang Python | "记住，截止日期是下周五" |
+
+### 10.2 remember 的两种输入方式
+
+两条路最终都是往 `self.memory` 写 key-value:
+
+- `/remember key value`: 用户手动拆好, 直接写入, 无 API 调用
+- "记住...": 检测到关键词 → 静默调一次 API 提取 JSON → 合并到 memory
+
+提取 prompt 示例:
+```
+从以下用户消息中提取需要长期记住的关键事实, 用 JSON 格式返回 {"key": "value"}, 无则返回 {}
+
+用户消息: 记住，我的截止日期是下周五，用 PostgreSQL 数据库
+```
+
+模型返回: `{"deadline": "下周五", "db": "PostgreSQL"}`
+
+### 10.3 发送版本的完整拼接顺序
+
+```
+messages[0]: system prompt (base + [Memory] block)    ← memory (永远可见)
+messages[1]: omit notice / checkpoint                  ← 策略消息 (水位线 > 0 时)
+messages[2..]: pinned messages                         ← pin (完整保留)
+messages[..]: waterline 之上的普通消息                   ← 正常对话
+messages[-1]: user 新消息                              ← 当前输入 (chat() 中追加)
+```
+
+### 10.4 使用场景选择
+
+- 信息是一个**事实** (姓名/偏好/配置) → /remember 或 "记住"
+- 信息是一段**完整对话** (设计讨论/需求确认) → /pin
+- 两者可以叠加: pin 保留完整讨论, remember 提取其中的关键结论

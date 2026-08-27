@@ -55,6 +55,7 @@
    - /remember key value: 手动写入
    - /memory: 查看所有记忆
    - /forget key: 删除某条
+   - /unpin N: 按轮次号取消 pin (与 /pin 对称)
    - "记住"触发: 用户消息含"记住"/"remember"时, 调模型提取 JSON, 合并到 memory
 
 3. 动态 System Prompt:
@@ -110,3 +111,54 @@
 # ============================================================
 # 你的代码写在下面
 # ============================================================
+
+from common.sessions import Session
+
+if __name__ == "__main__":
+    session = Session(strategy="summary", threshold=8)
+
+    print("=== Multi-turn Chat CLI (Summary Compression) ===")
+    print(
+        f"Session: {session.session_id} | Strategy: {session.strategy} | Threshold: {session.threshold}"
+    )
+    print(
+        "Commands: /new /save /load /list /pin /unpin /pins /compact /remember /forget /memory /quit /exit"
+    )
+
+    while True:
+        try:
+            user_input = input("\nYou: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nBye!")
+            break
+
+        if not user_input:
+            continue
+
+        match user_input:
+            case "/quit" | "/exit":
+                break
+            case "/new":
+                session.new()
+            case "/save":
+                session.save()
+            case "/load":
+                session.load()
+            case "/list":
+                session.list_sessions()
+            case "/pin":
+                session.pin()
+            case "/unpin":
+                session.unpin(user_input)
+            case "/pins":
+                session.pins()
+            case "/compact":
+                session.compact()
+            case "/remember":
+                session.remember(user_input)
+            case "/forget":
+                session.forget(user_input)
+            case "/memory":
+                session.view_memory()
+            case _:
+                session.chat(user_input)

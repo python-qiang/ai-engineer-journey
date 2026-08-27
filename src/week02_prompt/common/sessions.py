@@ -23,6 +23,10 @@ class Session:
 
     _SESSIONS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sessions")
 
+    _COMPACTION_SYSTEM = """You are a precise summarization assistant. \
+Your job is to produce structured progressive summaries of conversations. \
+Output only the summary, no explanations."""
+
     _COMPACTION_PROMPT = """请基于【已有摘要】和【新对话】，生成一份更新后的结构化摘要。
 
 输出以下固定结构(每个 section 必须保留，无内容写"(无)"):
@@ -61,6 +65,15 @@ class Session:
 
     _CHECKPOINT_PREAMBLE = "[Checkpoint - established background, do not restate. Continue from messages below.]"
 
+    _EXTRACT_SYSTEM = """You are a fact extraction assistant. \
+Extract key facts from user messages and return them as JSON. \
+Output only valid JSON, no explanations."""
+
+    _EXTRACT_PROMPT = (
+        '从以下用户消息中提取需要长期记住的关键事实, 用JSON格式返回 {{"key": "value"}}, 无则返回 {{}}\n\n'
+        "用户消息: {user_input}"
+    )
+
     _KEEP_RECENT = 2
 
     @staticmethod
@@ -94,8 +107,8 @@ class Session:
             0  # Rounds 1.._waterline have been processed (omitted/summarized)
         )
         self.pinned_rounds: set[int] = set()
-        self.pinned_messages: list[dict] = []
         self.summary: str = ""
+        self.memory: dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Strategy internals
@@ -105,8 +118,8 @@ class Session:
         self.total_rounds = 0
         self._waterline = 0
         self.pinned_rounds.clear()
-        self.pinned_messages.clear()
         self.summary = ""
+        self.memory.clear()
 
     def _get_rounds_above_waterline(self) -> list[int]:
         """Get non-pinned round numbers that haven't been processed yet."""
@@ -119,6 +132,14 @@ class Session:
     def _count_pending_rounds(self) -> int:
         """Count how many non-pinned rounds are above waterline (awaiting processing)."""
         return len(self._get_rounds_above_waterline())
+
+    def _get_pinned_messages(self) -> list[dict]:
+        """Extract pinned messages from self.messages by round number."""
+        result = []
+        for r in sorted(self.pinned_rounds):
+            idx = (r - 1) * 2 + 1
+            result.extend(self.messages[idx : idx + 2])
+        return result
 
     # ------------------------------------------------------------------
     # Strategy dispatch
@@ -176,8 +197,8 @@ class Session:
                     "content": f"[{total_omitted} rounds of history omitted. Ask user if you need earlier context.]",
                 }
             )
-        if self.pinned_messages:
-            result.extend(self.pinned_messages)
+        if self.pinned_rounds:
+            result.extend(self._get_pinned_messages())
         result.extend(above_messages)
         return result
 
@@ -208,36 +229,10 @@ class Session:
                     "content": f"{self._CHECKPOINT_PREAMBLE}\n\n{self.summary}",
                 }
             )
-        if self.pinned_messages:
-            result.extend(self.pinned_messages)
+        if self.pinned_rounds:
+            result.extend(self._get_pinned_messages())
         result.extend(above_messages)
         return result
-
-    # ------------------------------------------------------------------
-    # Pin
-    # ------------------------------------------------------------------
-
-    def pin(self):
-        """Pin the last round so it survives truncation/compression."""
-        if self.total_rounds == 0:
-            print("[Nothing to pin]")
-            return
-        if self.total_rounds in self.pinned_rounds:
-            print("[Already pinned]")
-            return
-        self.pinned_rounds.add(self.total_rounds)
-        self.pinned_messages.extend(self.messages[-2:])
-        print(f"[Pinned round {self.total_rounds}]")
-
-    def pins(self):
-        """Display all pinned messages."""
-        if not self.pinned_messages:
-            print("[No messages have been pinned.]")
-            return
-        print(f"[{len(self.pinned_rounds)} pinned round(s)]")
-        for msg in self.pinned_messages:
-            prefix = "  User:" if msg["role"] == "user" else "  AI:  "
-            print(f"{prefix} {msg['content'][:80]}")
 
     # ------------------------------------------------------------------
     # Compact
@@ -272,7 +267,10 @@ class Session:
 
         try:
             summary_content, _, _ = stream_chat(
-                messages=[{"role": "user", "content": prompt_text}],
+                messages=[
+                    {"role": "system", "content": self._COMPACTION_SYSTEM},
+                    {"role": "user", "content": prompt_text},
+                ],
                 enable_thinking=self.enable_thinking,
                 print_content=False,
             )
@@ -296,6 +294,117 @@ class Session:
         else:
             logger.warning("Compaction returned empty content")
             print("[Warning: compaction returned empty, summary unchanged]")
+
+    # ------------------------------------------------------------------
+    # Pin
+    # ------------------------------------------------------------------
+
+    def pin(self):
+        """Pin the last round so it survives truncation/compression."""
+        if self.total_rounds == 0:
+            print("[Nothing to pin]")
+            return
+        if self.total_rounds in self.pinned_rounds:
+            print("[Already pinned]")
+            return
+        self.pinned_rounds.add(self.total_rounds)
+        print(f"[Pinned round {self.total_rounds}]")
+
+    def unpin(self, round_str: str):
+        """Unpin a round by its round number."""
+        try:
+            round_num = int(round_str)
+        except (TypeError, ValueError):
+            print("[Invalid round number]")
+            return
+        if round_num not in self.pinned_rounds:
+            print("[Not pinned]")
+            return
+        self.pinned_rounds.discard(round_num)
+        print(f"[Unpinned round {round_num}]")
+
+    def pins(self):
+        """Display all pinned messages."""
+        if not self.pinned_rounds:
+            print("[No messages have been pinned.]")
+            return
+        print(f"[{len(self.pinned_rounds)} pinned round(s)]")
+        for r in sorted(self.pinned_rounds):
+            idx = (r - 1) * 2 + 1
+            user_msg = self.messages[idx]["content"][:80]
+            ai_msg = self.messages[idx + 1]["content"][:80]
+            print(f"  Round {r}:")
+            print(f"    User: {user_msg}")
+            print(f"    AI:   {ai_msg}")
+
+    # ------------------------------------------------------------------
+    # Memory
+    # ------------------------------------------------------------------
+
+    def remember(self, user_input: str):
+        """Store a key-value fact in memory. Usage: /remember key value"""
+        parts = user_input.split(None, 1)
+        if len(parts) < 2:
+            print("[Usage: /remember key value]")
+            return
+        key, value = parts[0], parts[1]
+        if key in self.memory:
+            print(f"[Overwriting '{key}': '{self.memory[key]}' -> '{value}']")
+        self.memory[key] = value
+        print(f"[Remembered: {key} = {value}]")
+
+    def forget(self, key: str):
+        """Remove a key from memory."""
+        if key not in self.memory:
+            print(f"[Key '{key}' not found in memory]")
+            return
+        del self.memory[key]
+        print(f"[Forgotten: {key}]")
+
+    def view_memory(self):
+        """Display all memory keys and values."""
+        if not self.memory:
+            print("[Memory is empty]")
+            return
+        print(f"[{len(self.memory)} key(s) in memory]")
+        for key, value in self.memory.items():
+            print(f"  {key}: {value}")
+
+    def _extract_memory(self, user_input: str):
+        """Auto-extract key facts from user input via model call."""
+        try:
+            raw, _, _ = stream_chat(
+                messages=[
+                    {"role": "system", "content": self._EXTRACT_SYSTEM},
+                    {
+                        "role": "user",
+                        "content": self._EXTRACT_PROMPT.format(user_input=user_input),
+                    },
+                ],
+                enable_thinking=self.enable_thinking,
+                print_content=False,
+            )
+        except (httpx.HTTPError, RuntimeError) as e:
+            logger.warning("Auto-extract key facts from user input failed: %s", e)
+            print(f"[Warning: auto-extract key facts from input failed: {e}]")
+            return
+
+        if not raw:
+            return
+        try:
+            extracted = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning(
+                "Auto-extract key facts from input failed: could not parse raw response: %s]",
+                raw[:100],
+            )
+            print("[Warning: could not parse extracted memory]")
+            return
+        if extracted:
+            self.memory.update(extracted)
+            print(
+                f"[Remembered: {', '.join(f'{k} = {v}' for k, v in extracted.items())}]"
+            )
 
     # ------------------------------------------------------------------
     # Session persistence
@@ -397,6 +506,7 @@ class Session:
 
     def chat(self, user_input: str):
         """Send user message, apply strategy, stream response, update state."""
+
         try:
             messages_to_send = self._apply_strategy()
             messages_to_send.append({"role": "user", "content": user_input})
