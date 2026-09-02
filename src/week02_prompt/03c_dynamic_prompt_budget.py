@@ -19,18 +19,30 @@
    - Qwen chat template: <|im_start|>role\ncontent<|im_end|>\n (每条消息 +4 overhead)
    - 末尾 +3 (assistant prompt: <|im_start|>assistant\n)
 
-4. Token 预算管理:
-   - TOKEN_BUDGET = 32000 (性价比最优区间, 推理速度快)
-   - 发送前用 count_tokens() 精确预估
-   - 超 80%: 打印警告建议 /compact
-   - 超 90%: 自动触发 compact(补充 threshold 机制, 基于 token 而非轮次)
-   - 双触发机制: 轮次超 threshold OR token 超 90%, 任一触发压缩
+4. Token 预算触发压缩 (瞬时值, 防单次请求过大):
+   - 问题: threshold 是轮次触发, 但轮次数不反映真实 token 占用
+     (8 轮闲聊 ~1K token, 8 轮贴代码 ~30K token)
+   - TOKEN_BUDGET = 32000 (单次请求性价比区间, 非模型上限)
+   - _over_token_budget(): 用 count_message_tokens() 算"这次要发的量"
+   - 关键: 触发检查必须放在 _apply_strategy() 内部, 和轮次触发并列:
+     if pending > threshold OR over_budget: compact() / 推进 waterline
+   - 为什么放内部: compact 后要用更新的 waterline 重新提取消息,
+     若在 _apply_strategy() 之后补压缩, messages_to_send 不会变 (bug)
 
-5. Token Usage 展示 + Cost 追踪(每轮打印):
-   - [Tokens: X / 32000 (Y%) | Input: A | Output: B | Cost: ¥C]
-   - 基于 API 返回的 usage.prompt_tokens/completion_tokens 精确值
-   - 成本: 输入 2元/百万tokens (8折=1.6元) + 输出 8元/百万tokens (8折=6.4元)
-   - 累计追踪 self.total_input_tokens, self.total_output_tokens
+5. Token Usage 展示 + Cost 追踪 (累计值, 对齐 Gemini AI Studio):
+   - [Token Usage: X / 1048576 | Input: A | Output: B | Cost: ¥C]
+   - X = self.total_input_tokens + self.total_output_tokens (累计消耗)
+   - 分母 = context window 上限 (qwen3.7-plus 为 1M)
+   - 每轮累加: total_input += usage.prompt_tokens, total_output += ...
+   - 成本: 输入 2元/百万 (8折=1.6元) + 输出 8元/百万 (8折=6.4元)
+   - 纯监控展示, 不触发任何动作 (触发用第 4 点的瞬时值)
+
+   注意区分两个数字:
+   | | 展示的 X | 触发的阈值 |
+   |--|---------|-----------|
+   | 是什么 | 累计消耗 | 单次请求预估 |
+   | 上限 | 1M (context window) | 32000 (性价比预算) |
+   | 累加? | 是 | 否, 瞬时 |
 
 === 本任务不需要关心的 ===
 
@@ -63,17 +75,28 @@
    - 每次构造发送版本时, messages[0] 替换为动态生成的 system prompt
    - memory 信息独立于 waterline, 永远在 system prompt 中
 
-4. Token 预算管理:
-   - TOKEN_BUDGET = 32000 (类变量, 可配置)
-   - 在 chat() 中 _apply_strategy() 之后, 发送前调 count_message_tokens()
-   - >80%: logger.warning + 打印建议 /compact
-   - >90%: 自动触发 compact (即使轮次未超 threshold)
+4. Token 预算触发 (瞬时值):
+   - token_budget 作为 __init__ 参数 (默认类常量 _TOKEN_BUDGET = 32000)
+   - 重构: 抽出纯函数 _build_messages(user_input) - 从当前状态构造完整
+     待发送 messages (system + summary/omit + pinned + above + user), 无触发逻辑
+   - _apply_strategy(user_input) 改为接收 user_input 并传给策略方法
+   - chat() 简化: messages_to_send = self._apply_strategy(user_input)
+     (不再在外面 append user 消息)
+   - 触发条件 (在 _sliding_window / _summary_compress 中):
+     if pending > threshold
+        or count_message_tokens(self._build_messages(user_input)) > self.token_budget:
+         推进 waterline / compact()
+     return self._build_messages(user_input)  # 用更新后状态重新构造
+   - 为什么这样: _build_messages 被调两次(检查+返回), 但逻辑单一无重复;
+     预估量 = 实际发送量 (都含 user_input), 无误差
 
-5. Usage 展示:
-   - 每轮打印: [Tokens: X / 32000 (Y%) | Input: A | Output: B | Cost: ¥C]
-   - self.total_input_tokens += usage.prompt_tokens
-   - self.total_output_tokens += usage.completion_tokens
-   - cost = input * 1.6e-6 + output * 6.4e-6
+5. Usage 展示 (累计值):
+   - 新增 self.total_input_tokens, self.total_output_tokens (chat 中累加)
+   - CONTEXT_WINDOW = 1048576 (类变量, qwen3.7-plus 上限)
+   - 每轮打印: [Token Usage: X / 1048576 | Input: A | Output: B | Cost: ¥C]
+     X = total_input + total_output
+     A/B = 累计 input/output
+   - cost = total_input * 1.6e-6 + total_output * 6.4e-6
 
 === 提示 ===
 

@@ -14,6 +14,7 @@ import uuid
 import httpx
 
 from framework.chat import stream_chat
+from framework.tokens import count_message_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,14 @@ Output only valid JSON, no explanations."""
 
     _KEEP_RECENT = 2
 
+    _TOKEN_BUDGET = 32000
+
+    # Context window upper bound (qwen3.7-plus)
+    _CONTEXT_WINDOW = 1048576
+    # Cost per token (RMB, 8-fold discount): input 1.6/M, output 6.4/M
+    _INPUT_COST_PER_TOKEN = 1.6e-6
+    _OUTPUT_COST_PER_TOKEN = 6.4e-6
+
     @staticmethod
     def _new_session_id() -> str:
         return uuid.uuid4().hex[:16]
@@ -85,6 +94,7 @@ Output only valid JSON, no explanations."""
         system_prompt: str = "你是一个无所不知的AI智能助手。",
         strategy: str | None = None,
         threshold: int = 10,
+        token_budget: int = _TOKEN_BUDGET,
         enable_thinking: bool = True,
     ):
         """Initialize a new session.
@@ -101,6 +111,7 @@ Output only valid JSON, no explanations."""
         self.messages: list[dict] = [{"role": "system", "content": system_prompt}]
         self.strategy = strategy
         self.threshold = threshold
+        self.token_budget = token_budget
         self.enable_thinking = enable_thinking
         self.total_rounds = 0
         self._waterline = (
@@ -109,6 +120,8 @@ Output only valid JSON, no explanations."""
         self.pinned_rounds: set[int] = set()
         self.summary: str = ""
         self.memory: dict[str, str] = {}
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
 
     # ------------------------------------------------------------------
     # Strategy internals
@@ -120,6 +133,8 @@ Output only valid JSON, no explanations."""
         self.pinned_rounds.clear()
         self.summary = ""
         self.memory.clear()
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
 
     def _get_rounds_above_waterline(self) -> list[int]:
         """Get non-pinned round numbers that haven't been processed yet."""
@@ -141,27 +156,70 @@ Output only valid JSON, no explanations."""
             result.extend(self.messages[idx : idx + 2])
         return result
 
+    def _build_system_prompt(self) -> dict:
+        """Build the system prompt dict, injecting memory as a context block."""
+        content = self.system_prompt
+        if self.memory:
+            memory_block = "; ".join(f"{k}: {v}" for k, v in self.memory.items())
+            content = f"{self.system_prompt}\n\n[Memory] {memory_block}"
+        return {"role": "system", "content": content}
+
     # ------------------------------------------------------------------
     # Strategy dispatch
     # ------------------------------------------------------------------
 
-    def _apply_strategy(self) -> list[dict]:
+    def _apply_strategy(self, user_input: str) -> list[dict]:
         """Build the messages list to send to the API (truncated/compressed copy)."""
         match self.strategy:
             case "sliding_window":
-                return self._sliding_window()
+                return self._sliding_window(user_input)
             case "summary":
-                return self._summary_compress()
+                return self._summary_compress(user_input)
             case _:
-                return list(self.messages)
+                return self._build_messages(user_input)
 
-    def _sliding_window(self) -> list[dict]:
+    def _should_trigger(self, user_input: str) -> bool:
+        """Decide whether to trigger compression, logging which condition fired.
+
+        Two independent triggers (either one fires):
+        - Round count: non-pinned pending rounds exceed threshold
+        - Token budget: the messages we are about to send exceed token_budget
+          (guards against a few very long rounds blowing past context limits
+          before the round threshold is reached)
+        """
+        pending = self._count_pending_rounds()
+        estimated = count_message_tokens(self._build_messages(user_input))
+        by_rounds = pending > self.threshold
+        by_tokens = estimated > self.token_budget
+        if by_rounds or by_tokens:
+            logger.info(
+                "Trigger check: FIRED (by_rounds=%s pending=%d/threshold=%d, "
+                "by_tokens=%s estimated=%d/budget=%d)",
+                by_rounds,
+                pending,
+                self.threshold,
+                by_tokens,
+                estimated,
+                self.token_budget,
+            )
+        else:
+            logger.info(
+                "Trigger check: no trigger (pending=%d/threshold=%d, estimated=%d/budget=%d)",
+                pending,
+                self.threshold,
+                estimated,
+                self.token_budget,
+            )
+        return by_rounds or by_tokens
+
+    def _sliding_window(self, user_input: str) -> list[dict]:
         """Sliding window: keep all above waterline until threshold, then cut.
 
-        - Before threshold: send system + omit_notice + pinned + ALL rounds above waterline
-        - At threshold: advance waterline, then send system + omit_notice + pinned + ALL above waterline (which is now only _KEEP_RECENT)
+        - Before trigger: send system + omit_notice + pinned + ALL rounds above waterline
+        - On trigger: advance waterline so only _KEEP_RECENT rounds remain above it,
+          then rebuild (older rounds are dropped, replaced by an omit notice)
         """
-        if self._count_pending_rounds() > self.threshold:
+        if self._should_trigger(user_input):
             pending_rounds = self._get_rounds_above_waterline()
             if len(pending_rounds) > self._KEEP_RECENT:
                 self._waterline = pending_rounds[-(self._KEEP_RECENT)] - 1
@@ -173,56 +231,49 @@ Output only valid JSON, no explanations."""
                     self.threshold,
                     self._waterline,
                 )
+        return self._build_messages(user_input)
 
-        if self._waterline == 0:
-            return list(self.messages)
+    def _summary_compress(self, user_input: str) -> list[dict]:
+        """Summary compression: keep all above waterline until trigger, then compact.
 
-        # Total omitted (cumulative)
-        total_omitted = len(
-            [r for r in range(1, self._waterline + 1) if r not in self.pinned_rounds]
-        )
-
-        # All rounds above waterline (not just _KEEP_RECENT - accumulates between triggers)
-        pending_rounds = self._get_rounds_above_waterline()
-        above_messages = []
-        for r in pending_rounds:
-            idx = (r - 1) * 2 + 1
-            above_messages.extend(self.messages[idx : idx + 2])
-
-        result = [self.messages[0]]
-        if total_omitted > 0:
-            result.append(
-                {
-                    "role": "system",
-                    "content": f"[{total_omitted} rounds of history omitted. Ask user if you need earlier context.]",
-                }
-            )
-        if self.pinned_rounds:
-            result.extend(self._get_pinned_messages())
-        result.extend(above_messages)
-        return result
-
-    def _summary_compress(self) -> list[dict]:
-        """Summary compression: keep all above waterline until threshold, then compact.
-
-        - Before threshold: send system + checkpoint + pinned + ALL rounds above waterline
-        - At threshold: compact (updates summary & waterline), then send system + checkpoint + pinned + ALL above waterline (which is now only _KEEP_RECENT)
+        - Before trigger: send system + checkpoint + pinned + ALL rounds above waterline
+        - On trigger: compact() (updates summary & waterline via an API call),
+          then rebuild (older rounds replaced by the checkpoint summary)
         """
-        if self._count_pending_rounds() > self.threshold:
+        if self._should_trigger(user_input):
+            logger.info(
+                "Summary compress: trigger fired, calling compact() (waterline=%d, pending=%d)",
+                self._waterline,
+                self._count_pending_rounds(),
+            )
             self.compact()
+        return self._build_messages(user_input)
 
-        if self._waterline == 0:
-            return list(self.messages)
-
-        # All rounds above waterline (accumulates between triggers)
+    def _build_messages(self, user_input: str) -> list[dict]:
+        """Build the messages list to send to the API (truncated/compressed copy)."""
+        result = [self._build_system_prompt()]
         pending_rounds = self._get_rounds_above_waterline()
         above_messages = []
         for r in pending_rounds:
             idx = (r - 1) * 2 + 1
             above_messages.extend(self.messages[idx : idx + 2])
-
-        result = [self.messages[0]]
-        if self.summary:
+        if self.strategy == "sliding_window":
+            # Total omitted (cumulative)
+            total_omitted = len(
+                [
+                    r
+                    for r in range(1, self._waterline + 1)
+                    if r not in self.pinned_rounds
+                ]
+            )
+            if total_omitted > 0:
+                result.append(
+                    {
+                        "role": "system",
+                        "content": f"[{total_omitted} rounds of history omitted. Ask user if you need earlier context.]",
+                    }
+                )
+        elif self.strategy == "summary" and self.summary:
             result.append(
                 {
                     "role": "system",
@@ -232,6 +283,7 @@ Output only valid JSON, no explanations."""
         if self.pinned_rounds:
             result.extend(self._get_pinned_messages())
         result.extend(above_messages)
+        result.append({"role": "user", "content": user_input})
         return result
 
     # ------------------------------------------------------------------
@@ -243,6 +295,11 @@ Output only valid JSON, no explanations."""
         pending_rounds = self._get_rounds_above_waterline()
 
         if len(pending_rounds) <= self._KEEP_RECENT:
+            logger.info(
+                "Compact skipped: pending=%d <= keep_recent=%d (nothing to compress)",
+                len(pending_rounds),
+                self._KEEP_RECENT,
+            )
             print("[Nothing to compact]")
             return
 
@@ -308,6 +365,11 @@ Output only valid JSON, no explanations."""
             print("[Already pinned]")
             return
         self.pinned_rounds.add(self.total_rounds)
+        logger.info(
+            "Pinned round %d, pinned=%s",
+            self.total_rounds,
+            sorted(self.pinned_rounds),
+        )
         print(f"[Pinned round {self.total_rounds}]")
 
     def unpin(self, round_str: str):
@@ -321,6 +383,9 @@ Output only valid JSON, no explanations."""
             print("[Not pinned]")
             return
         self.pinned_rounds.discard(round_num)
+        logger.info(
+            "Unpinned round %d, pinned=%s", round_num, sorted(self.pinned_rounds)
+        )
         print(f"[Unpinned round {round_num}]")
 
     def pins(self):
@@ -351,6 +416,7 @@ Output only valid JSON, no explanations."""
         if key in self.memory:
             print(f"[Overwriting '{key}': '{self.memory[key]}' -> '{value}']")
         self.memory[key] = value
+        logger.info("Remembered: %s = %s, memory=%s", key, value, self.memory)
         print(f"[Remembered: {key} = {value}]")
 
     def forget(self, key: str):
@@ -359,6 +425,7 @@ Output only valid JSON, no explanations."""
             print(f"[Key '{key}' not found in memory]")
             return
         del self.memory[key]
+        logger.info("Forgot: %s, memory=%s", key, self.memory)
         print(f"[Forgotten: {key}]")
 
     def view_memory(self):
@@ -402,9 +469,12 @@ Output only valid JSON, no explanations."""
             return
         if extracted:
             self.memory.update(extracted)
+            logger.info("Memory extracted: %s", extracted)
             print(
                 f"[Remembered: {', '.join(f'{k} = {v}' for k, v in extracted.items())}]"
             )
+        else:
+            logger.info("Memory extraction returned no facts")
 
     # ------------------------------------------------------------------
     # Session persistence
@@ -412,9 +482,10 @@ Output only valid JSON, no explanations."""
 
     def new(self):
         """Start a new session: clear history and reset state."""
-        self.session_id = self._new_session_id()
-        self.messages = [{"role": "system", "content": self.system_prompt}]
         self._reset_state()
+        self.session_id = self._new_session_id()
+        self.messages = [self._build_system_prompt()]
+        logger.info("New session started: %s (state reset)", self.session_id)
         print(f"--- New session: {self.session_id} ---")
 
     def save(self):
@@ -423,8 +494,12 @@ Output only valid JSON, no explanations."""
         try:
             with open(fpath, "w", encoding="utf-8") as f:
                 json.dump(self.messages, f, ensure_ascii=False, indent=2)
+            logger.info(
+                "Saved session %s (%d messages)", self.session_id, len(self.messages)
+            )
             print(f"--- Saved session {self.session_id} ---")
         except OSError as e:
+            logger.warning("Save failed for %s: %s", self.session_id, e)
             print(f"--- Save failed: {e} ---")
 
     def load(self):
@@ -455,12 +530,19 @@ Output only valid JSON, no explanations."""
                 self.messages = loaded
                 self.session_id = target_id
                 self._reset_state()
+                logger.info(
+                    "Loaded session %s (%d messages, state reset)",
+                    self.session_id,
+                    len(self.messages),
+                )
                 print(
                     f"--- Loaded session {self.session_id} ({len(self.messages)} messages) ---"
                 )
             else:
+                logger.warning("Load failed: invalid file format for %s", target_id)
                 print("--- Invalid file format ---")
         except (OSError, json.JSONDecodeError) as e:
+            logger.warning("Load failed for %s: %s", target_id, e)
             print(f"--- Load failed: {e} ---")
 
     def list_sessions(self):
@@ -506,12 +588,17 @@ Output only valid JSON, no explanations."""
 
     def chat(self, user_input: str):
         """Send user message, apply strategy, stream response, update state."""
+        # Keyword-based trigger for auto memory extraction.
+        # TODO: keyword matching is brittle; consider a lightweight classifier later.
+        if "记住" in user_input or "remember" in user_input.lower():
+            logger.info("Memory extraction triggered by keyword in user input")
+            self._extract_memory(user_input)
 
         try:
-            messages_to_send = self._apply_strategy()
-            messages_to_send.append({"role": "user", "content": user_input})
+            messages_to_send = self._apply_strategy(user_input)
+            estimated_tokens = count_message_tokens(messages_to_send)
             logger.info(
-                "chat: round=%d, strategy=%s, total_rounds=%d, waterline=%d, pinned=%s, pending=%d, sending=%d msgs",
+                "chat: round=%d, strategy=%s, total_rounds=%d, waterline=%d, pinned=%s, pending=%d, sending=%d msgs, estimated_input_tokens=%d",
                 self.total_rounds + 1,
                 self.strategy,
                 self.total_rounds,
@@ -519,6 +606,7 @@ Output only valid JSON, no explanations."""
                 sorted(self.pinned_rounds),
                 self._count_pending_rounds(),
                 len(messages_to_send),
+                estimated_tokens,
             )
 
             print("\nAI: ", end="", flush=True)
@@ -536,11 +624,26 @@ Output only valid JSON, no explanations."""
                 self.total_rounds += 1
 
                 if finish_reason == "length":
+                    logger.warning(
+                        "Response truncated at round %d (max_tokens reached)",
+                        self.total_rounds,
+                    )
                     print("[Warning: response truncated (max_tokens reached)]")
                 elif finish_reason == "tool_calls":
+                    logger.warning(
+                        "Model requested tool_calls at round %d (not implemented)",
+                        self.total_rounds,
+                    )
                     print("[Warning: model requested tool_calls (not implemented)]")
 
                 if usage:
+                    self.total_input_tokens += usage["prompt_tokens"]
+                    self.total_output_tokens += usage["completion_tokens"]
+                    total_tokens = self.total_input_tokens + self.total_output_tokens
+                    cost = (
+                        self.total_input_tokens * self._INPUT_COST_PER_TOKEN
+                        + self.total_output_tokens * self._OUTPUT_COST_PER_TOKEN
+                    )
                     logger.info(
                         "chat complete: round=%d, input_tokens=%d, output_tokens=%d, sent=%d msgs",
                         self.total_rounds,
@@ -548,8 +651,22 @@ Output only valid JSON, no explanations."""
                         usage["completion_tokens"],
                         len(messages_to_send),
                     )
+                    # Compare our local token estimate against the API's actual count
+                    actual_input = usage["prompt_tokens"]
+                    diff = estimated_tokens - actual_input
+                    pct = (diff / actual_input * 100) if actual_input else 0.0
+                    logger.info(
+                        "token check: estimated=%d, actual=%d, diff=%+d (%.1f%%)",
+                        estimated_tokens,
+                        actual_input,
+                        diff,
+                        pct,
+                    )
                     print(
-                        f"\n[Input: {usage['prompt_tokens']} | Output: {usage['completion_tokens']} | Round: {self.total_rounds} | Sent: {len(messages_to_send)} msgs]"
+                        f"\n[Token Usage: {total_tokens} / {self._CONTEXT_WINDOW} | "
+                        f"Input: {self.total_input_tokens} | "
+                        f"Output: {self.total_output_tokens} | "
+                        f"Cost: ¥{cost:.4f} | Round: {self.total_rounds}]"
                     )
                 else:
                     logger.warning(
