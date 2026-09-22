@@ -323,57 +323,93 @@
 - messages 永不删除：和 Kiro/Codex 的 jsonl 持久化一致
 - 渐进式结构化摘要：参考 OpenAI Codex + DeepSeek Harness + Kiro 三家方案
 
-##### 4. Prompt 核心技巧
+##### 4. Prompt Behavior Control（现代 Prompt 技巧与推理控制）
 
-**要做什么：** 掌握让大模型输出更准确、更可控的关键 Prompt 技术。
+**要做什么：** 理解 Prompt 如何改变模型行为，以及在 Reasoning Model（自带 thinking）时代如何控制模型；同时建立"Prompt → 实验 → 对比"的工程思维。
 
-**要达到的效果：** 面对任何业务需求，能快速设计出高质量的 Prompt。
+**要达到的效果：** 不靠框架、不靠 API 特性，纯用"语言 + 排版"把模型控制到极致，并能用数据（而非感觉）判断哪个 Prompt 更好。
+
+> **2026 认知转变：** Prompt 工程已从"怎么写一句好 prompt"变成"怎么设计、控制、评估 LLM 的输入程序"。传统"Let's think step by step"在 reasoning model 上已过时甚至有害——重点转向控制"何时思考、思考到什么程度、如何验证"。
 
 **技术点：**
 
-- 16_Zero-shot：直接提问，不给示例
-- 17_Few-shot：给 2-3 个输入输出示例，让模型模仿
-- 18_Chain-of-Thought (CoT)：让模型"一步步思考"再给答案
-- 19_角色扮演（Role Playing）：赋予模型专家身份
-- 20_约束与格式控制：明确告诉模型"不要做什么"
+- 16_Zero-shot / Few-shot：示例的数量、质量、顺序、边界案例覆盖（Few-shot 用途从"教逻辑"转向"教格式/风格/业务黑话"）
+- 17_Reasoning Control（核心）：think 开关、reasoning budget/effort、reasoning guidance（给目标而非规定步骤）、verification/self-check、何时不该推理
+- 18_传统 CoT 对照：只做一次对照实验，理解它在 reasoning model 时代为何降级
+- 19_Prompt 约束与排版：显式约束、纯 prompt 控制 JSON（体验不确定性，为第3周铺垫）、XML/分隔符隔离
+- 20_Prompt Cache 友好排版：静态前缀在前、动态内容在后，观测 DashScope 的 `usage.prompt_tokens_details.cached_tokens` 缓存命中与 TTFT 降低（不深入 Transformer KV 原理）
+
+**练习任务（一个任务一个文件，04a-04e）：**
+
+```
+04a Zero-shot vs Few-shot 对照:
+  - 电商客服意图分类(业务专属+有歧义标签, 让 few-shot 有用武之地), 6 种配置对比:
+    Zero-shot / 3随机示例 / 3高质量示例 / 全量高质量 / 打乱顺序 / 针对性边界示例
+  - 记录: accuracy, invalid label rate
+  - 真实发现(比"few-shot 一定更好"更有价值): few-shot 是双刃剑(选不好更差)、
+    加示例"按下葫芦浮起瓢"(需回归测试)、单次跑分有随机性(需多次运行)
+  - 示例池与测试集分开(避免 answer leakage)
+
+04b Reasoning Control(本节重点, 花最多时间):
+  - 同一逻辑/数学/代码题, 4 种模式对比:
+    thinking=False / thinking=True / thinking+verification / 手写传统CoT
+  - 记录: accuracy, reasoning_tokens, latency, 总 tokens
+  - 结论: 在什么任务上开 reasoning 才值得付钱?
+  - 复用 Week 1 参数调优 + 现有 stream_chat 的 enable_thinking
+
+04c Prompt 约束与纯 prompt JSON:
+  - 情感分类输出 JSON, 3 种约束强度对比:
+    "返回JSON" / 显式schema描述 / schema+few-shot
+  - 记录: valid JSON rate, 正确率
+  - 体验纯 prompt 约束的概率性(不用 Pydantic/API, 那是第3周)
+
+04d Prompt Cache 友好排版:
+  - 构造长 system prompt(万字文档) + few-shot + 动态 query
+  - 连续请求保持前缀不变, 观测 cached_tokens 从 0 -> 命中
+  - 故意改动前缀一个字, 观察缓存失效
+  - 记录 TTFT 和费用变化
+
+04e Mini Experiment Runner(为第16周埋伏笔):
+  - 写一个极简 runner(50-100行, 不是框架):
+    run_experiment(name, dataset, prompt_builder, evaluator)
+  - 支持多个 prompt 版本 A/B 对比
+  - 输出: accuracy / latency / tokens / cost
+  - 把前面 04a-04c 的重复实验逻辑抽进来, 体会"为什么需要抽象"
+```
+
+**明确不做（分流到后续周次）：** Pydantic/JSON Schema/Structured Outputs API（第3周）、Tool prompting（第4周）、DSPy/GEPA/Meta-prompting（第9周+）、完整 Evaluation 框架/LLM-as-Judge/Ragas（第16周）、Prompt Injection 深入（第12/15周）。
+
+##### 5. Prompt as Code（Prompt 模板化与工程管理）
+
+**要做什么：** 将 Prompt 从硬编码字符串升级为可维护的工程资产——模板化、参数化、版本化、可测试。
+
+**要达到的效果：** Prompt 像代码一样管理，建立"无评测不修改"的心智。
+
+**技术点：**
+
+- 21_Jinja2 模板引擎：变量注入 + 条件渲染（如只有提供 document 时才渲染 `<context>` 块）
+- 22_Prompt 版本管理：用 Git 管理 prompt 迭代，v1/v2 可对比
+- 23_微型验证闭环（Micro-Eval）：延续 04e 的 runner，准备固定测试用例，改 prompt 后跑分对比（不做完整 Evaluation 框架，那是第16周）
+- 24_Prompt Library：按场景分类的模板目录结构
+- 25_Prompt as Code 心智：模板 + 变量 + 版本 + 测试用例 + 快照
 
 **练习任务：**
 
 ```
-任务1：用 Zero-shot 让模型做情感分析，记录准确率
-任务2：用 Few-shot（给 3 个示例）做同样的情感分析，对比准确率提升
-任务3：用 CoT 让模型解一道数学题，对比直接回答 vs 分步思考的正确率
-任务4：设计一个"客服机器人"的完整 System Prompt，包含角色、约束、格式要求
-```
-
-##### 5. Prompt 模板化工程
-
-**要做什么：** 将 Prompt 从硬编码字符串变成可维护的模板系统。
-
-**要达到的效果：** Prompt 可以像代码一样版本管理、参数化、复用。
-
-**技术点：**
-
-- 21_Python f-string / Jinja2 模板引擎做 Prompt 模板
-- 22_变量注入：将业务数据动态插入 Prompt
-- 23_Prompt 版本管理：用 Git 管理 Prompt 的迭代
-- 24_Prompt 测试：同一个 Prompt 跑 10 次看稳定性
-- 25_Prompt Library：建立自己的 Prompt 模板库
-
-**练习任务：**
-
-```
-任务1：用 Jinja2 写一个"文本分类"的 Prompt 模板，支持动态传入类别列表和待分类文本
-任务2：用 Git 管理你的 Prompt 文件夹，每次修改都 commit
-任务3：写一个 prompt_test.py 脚本，对同一个 Prompt 跑 20 次，统计输出一致性
-任务4：建立一个 prompts/ 目录，按场景分类存放你的所有 Prompt 模板
+任务1：用 Jinja2 重写一个"文本分类"prompt 模板, 支持动态类别列表 + 条件渲染 context 块
+任务2：建立 prompts/ 目录按场景分类, 用 Git 管理每次迭代
+任务3：延续 04e runner, 对模板 v1/v2 跑固定用例, 记录准确率与 token 变化
+任务4：建立至少 5 个模板的 prompt library
 ```
 
 #### 本周验收标准
 
 - [ ]  能手写一个支持多轮对话的命令行聊天程序
 - [ ]  实现了至少两种上下文窗口管理策略
-- [ ]  掌握 Few-shot、CoT 等技巧并有对比实验数据
+- [ ]  掌握 Reasoning Control（think 开关/budget/verification/何时不推理）并有对比实验数据
+- [ ]  能用纯 prompt 控制输出格式, 理解其概率性局限
+- [ ]  完成 Prompt Cache 排版实验, 观测到缓存命中
+- [ ]  写出 Mini Experiment Runner, 能用数据对比 prompt 版本
 - [ ]  建立了自己的 Prompt 模板库（至少 5 个模板）
 - [ ]  每次 API 调用都能看到 Token 消耗和费用
 
