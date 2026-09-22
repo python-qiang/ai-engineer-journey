@@ -36,8 +36,13 @@ if (!API_KEY) {
   process.exit(1);
 }
 
-const URL =
-  "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+const API_HOST = process.env.API_HOST;
+if (!API_HOST) {
+  console.error("错误: API_HOST 未设置, 请确认 direnv 已加载");
+  process.exit(1);
+}
+
+const URL = `${API_HOST}/compatible-mode/v1/chat/completions`;
 
 /**
  * 流式调用大模型 API, 逐字打印回复。

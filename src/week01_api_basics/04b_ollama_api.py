@@ -9,7 +9,7 @@
    - 同样的响应体: choices[0].message.content, usage
 
 2. 切换云端/本地只需改两个东西:
-   - URL: localhost:11434 vs dashscope.aliyuncs.com
+   - URL: localhost:11434 vs 云端业务空间专属域名
    - model: "qwen3:4b" vs "qwen3.6-flash-2026-04-16"
    - 其余代码完全不用改
 

@@ -72,7 +72,8 @@ def chat_with_messages(
     而是让调用方完全控制对话结构.
     """
     headers = {"Content-Type": "application/json"}
-    if "dashscope" in url:
+    # Local Ollama needs no auth; any remote (cloud) endpoint needs the API key.
+    if "localhost" not in url and "127.0.0.1" not in url:
         headers["Authorization"] = f"Bearer {API_KEY}"
 
     payload = {

@@ -46,7 +46,9 @@ def stream_chat(
             finish_reason: str | None - stop/length/tool_calls
     """
     headers = {"Content-Type": "application/json"}
-    if "dashscope" in url:
+    # Local Ollama needs no auth; any remote (cloud) endpoint needs the API key.
+    is_local = "localhost" in url or "127.0.0.1" in url
+    if not is_local:
         headers["Authorization"] = f"Bearer {API_KEY}"
 
     payload = {

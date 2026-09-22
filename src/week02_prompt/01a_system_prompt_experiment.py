@@ -75,7 +75,8 @@ def chat(
         show_thinking: 是否打印思考过程
     """
     headers = {"Content-Type": "application/json"}
-    if "dashscope" in url:
+    # Local Ollama needs no auth; any remote (cloud) endpoint needs the API key.
+    if "localhost" not in url and "127.0.0.1" not in url:
         headers["Authorization"] = f"Bearer {API_KEY}"
 
     messages = []
