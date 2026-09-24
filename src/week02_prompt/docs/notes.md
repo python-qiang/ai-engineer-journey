@@ -512,11 +512,13 @@ messages[-1]: user 新消息                              ← 当前输入 (chat
 1. **2026 模型 zero-shot 基线已经很强**: 66.7% 起步, few-shot 边际收益很小甚至为负。
    "few-shot 一定比 zero-shot 好"在现代模型 + 简单任务上不成立。
 
-2. **few-shot 是双刃剑(本质: 改变模型的决策边界 decision boundary)**:
-   示例不是单调增益, 而是移动模型判断类别的分界线——既可能提供有用的
-   task-specific evidence(任务专属证据), 也可能引入错误归纳/过拟合某些模式。
+2. **few-shot 是双刃剑(可以理解为: 示例改变了模型的决策边界 decision boundary)**:
+   示例不是单调增益, 而是改变模型对"输入模式与标签之间关系"的判断, 因此可能移动
+   某些样本的分类边界——既可能提供有用的 task-specific evidence(任务专属证据),
+   也可能引入错误归纳/过拟合某些模式。
+   (注: "移动决策边界"是对实验现象的一个有用解释, 本实验并未观测模型内部状态。)
    V3(3个高质量示例)反而比 zero-shot 更差, 多错的那条"要退货并投诉"被示例
-   把边界移歪, 判成了投诉。所以示例的**质量和边界覆盖比数量更重要**。
+   影响判成了投诉。所以示例的**质量和边界覆盖比数量更重要**。
 
 3. **示例顺序影响可忽略**: V4 vs V5 结果完全一样。
    现代模型对示例顺序不敏感(早期小模型有 recency bias, 最后一个示例权重高)。
@@ -593,15 +595,22 @@ messages[-1]: user 新消息                              ← 当前输入 (chat
   - M3: thinking=True + prompt 要求"先验证"
   - M4: thinking=False + prompt 要求"一步步推理"(手写 CoT 思维链)
 
-### 12.2 一个重要的前置发现: 题目难度这条路走不通
+### 12.2 一个重要的前置发现: 靠"加难题"制造 reasoning gap 走不通
 
-想用"更难的题"区分 thinking 开/关, 但失败了——2026 的 LLM 对**任何有明确、
-可归一化答案的推理题**几乎都能做对(gemini-2.5-flash 亦然)。
-加了贝叶斯/蒙提霍尔/递归等"人类直觉会错"的难题, thinking=True 依旧全对。
+想用"更难的题"区分 thinking 开/关, 但在本实验里失败了: 加了贝叶斯/蒙提霍尔/
+递归等"人类直觉容易出错"的题后, thinking=True 仍然 100%(另用 gemini-2.5-flash
+抽查亦然)。
 
-结论: **想在'标准答案题'的难度上难住现代 LLM 基本不可能**, 除非是世界未解难题
-或真实物理世界的复杂逻辑。
--> 所以实验重心从 accuracy(准确率) 转向 cost(成本)。这才是 2026 的真问题。
+限定结论: **在本实验的数据集(25道小型题)和模型配置下, 单纯继续增加这类题目的
+表面难度, 很难稳定制造出明显的 reasoning gap(推理能力差距)。**
+
+注意边界: 这不等于"标准答案题难不住现代 LLM"——"有明确答案"的范围极大, 例如
+很长的代码追踪、多约束组合优化、长文档信息整合、adversarial reasoning(对抗性
+推理)、超大搜索空间、需要外部知识/工具的问题、长链条数学证明, 都可能仍然很难。
+本实验只能说明小型 benchmark 题难以拉开差距。
+
+-> 因此本实验更适合研究 thinking 的 **quality-cost trade-off(质量-成本权衡)**,
+   而不是试图建立通用的"什么题算难题"标准。实验重心从 accuracy 转向 cost。
 
 ### 12.3 核心数据: 成本对比
 
@@ -613,6 +622,11 @@ messages[-1]: user 新消息                              ← 当前输入 (chat
 | M4 手写CoT | 1.32s | 2 | 84% (4错) | ✅ |
 
 极端单题: M2 火柴博弈题 43 秒、3076 output tokens(只为得到答案"2")。
+
+指标口径说明(重要): 表中 output tokens 取自 API 的 `completion_tokens`, 它是
+**reasoning(思考) + visible output(可见回答) 的合计**, 不等于纯 reasoning_tokens。
+本实验用它作为 thinking 额外成本的**近似指标**。若 provider 能单独提供
+reasoning_tokens, 应优先分开记录 input / reasoning / visible output。
 
 ### 12.4 四个关键结论
 
@@ -638,7 +652,8 @@ messages[-1]: user 新消息                              ← 当前输入 (chat
       所以只能说"本数据集上未观察到收益", 不能推广为"verification 无效"。
    -> 更深的认知: 生产级 verification 不是 prompt 里加一句"请验证", 而是
       check -> detect -> retry/repair 的可执行闭环(留待第15周 Harness)。
-      "请先验证"这种 prompt 提示既不可靠(易污染输出)、又非真正的质量保障手段。
+      单纯增加"请先验证"的提示**不能替代可观测、可执行的 verification loop**;
+      本实验还观察到它可能增加 token/latency 并污染最终输出。
 
 ### 12.5 thinking=False 藏不住思考(设计层面的领悟)
 
@@ -706,6 +721,7 @@ prompt engineering 从"怎么写一句聪明的 prompt"变成了
 > Prompt engineering 没消失, 它长大了——从"写咒语"进化成
 > "**设计 LLM 的输入程序 + 控制推理 + 管理上下文 + 用评估迭代**"。
 
-失效的是"哄模型"的小聪明(谁都能学); 升级的是工程能力(context engineering /
-reasoning control / evaluation)——这才是软开 + 统计背景的用武之地, 也是 2026
-AI 应用工程师值钱的地方。
+降级的是"哄模型"的小聪明(谁都能学); 升级的是工程能力(context engineering /
+reasoning control / evaluation)——这是软开 + 统计背景的用武之地, 也是 AI 应用
+工程岗位中**值得重点展示**的工程能力。
+(注: 这是基于本项目实验和公开文档趋势的判断, 不是经过验证的市场结论。)

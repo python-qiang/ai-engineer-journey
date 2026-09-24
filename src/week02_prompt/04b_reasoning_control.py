@@ -75,40 +75,62 @@
 核心问题不是"谁判断难题最准", 而是: **在质量几乎不掉的前提下, router 能省多少
 reasoning 成本?** (routing = quality/cost trade-off, 不是难度分类)
 
-6. 建立 Oracle(理想路由, 来自 Part 1 数据):
-   - 每题已有 M1(no thinking) 和 M2(thinking) 的对错
-   - Oracle 决策: M1对 -> no_think(简单, 不用开); M1错&M2对 -> think(难题, 值得开)
-   - Oracle 是"上帝视角的正确路由", 用来评判 router 判得准不准
+6. 建立 empirical oracle(经验性理想路由, 由 Part 1 的实际运行结果推导):
+   - 注意它不是"上帝视角的真理", 而是**基于 M1/M2 两个策略的实测结果**构造的标签
+     (M1 可能只是这次随机答错; 更强策略也可能救回 M1/M2 都错的题)
+   - 四种情况都要覆盖:
+     | M1 | M2 | oracle |
+     | ✅ | ✅ | NO_THINK (M1 够用, 不必付 thinking 成本) |
+     | ✅ | ❌ | NO_THINK |
+     | ❌ | ✅ | THINK (thinking 确实救回来了) |
+     | ❌ | ❌ | UNRESOLVED (thinking 也没解决, 该样本无法证明路由该选什么) |
+   - 代码: if m1_ok: NO_THINK; elif m2_ok: THINK; else: UNRESOLVED
+   - UNRESOLVED 的样本不计入 router 的对错统计
 
 7. 实现两版 router(都只返回决策 THINK / NO_THINK, 不回答问题):
-   - 规则版 route_by_rule(q): 关键词/长度等信号(简单、零成本、但脆弱)
+   - 规则版 route_by_rule(q): 关键词/长度等信号(简单、开销≈0、但脆弱)
    - 小模型版 route_by_model(q): 用本地 Ollama 模型(LOCAL_MODEL, thinking=False)
      * 关键: 让它判断的不是"这题难不难", 而是**"不开 thinking 直接答, 失败风险高吗"**
        (difficulty != need for reasoning: 大数乘法看着难其实秒算对;
         "这代码为啥只在生产失败"字少却极难)
      * 复用 stream_chat, url=ollama_base_url, model=LOCAL_MODEL
-     * 本地模型做 router: 免费, 但仍有 latency, 要算进总成本
+     * router 本身有开销: 本地无 API 费用, 但**latency 必须计入端到端成本**
 
-8. 用 router evaluation set 验证(避免 evaluation leakage 数据泄漏):
+8. 用 router holdout 测试集验证(避免 evaluation leakage 数据泄漏):
    - 不要用 Part 1 那 25 题(已被 M1-M4 用过, 规则 router 会过拟合)
-   - 另造 10-15 道**新题**做 router 测试集, 故意包含:
+   - 另造 10-15 道**新题**, 故意包含:
      * 看着简单实则难(需要 thinking)
      * 看着复杂实则简单(不需要 thinking)
-   - 这样才能测出 router 是否真学到东西, 而非背题
+   - **holdout 的 oracle 也必须实际跑 M1/M2 得到**, 不能靠人工判断"我觉得这题难"
+     (否则 router 学的是你的主观难度感, 而非真实的失败风险)
 
-9. 对每个 router 记录(对照 Oracle):
-   - router accuracy(和 Oracle 决策一致的比例)
-   - **false negative(该 think 却判 no_think)**: 最危险, 会直接答错
-   - false positive(该 no_think 却判 think): 只是多花钱, 可接受
-   - 两种错的成本不对等, router 应偏向"宁可多开也别漏开"
+9. router 质量指标(次要, 用于诊断):
+   - oracle agreement(和 empirical oracle 决策一致的比例)
+   - false negative(该 THINK 却判 NO_THINK): 导致答错
+   - false positive(该 NO_THINK 却判 THINK): 只是多花钱
+   - 在**质量优先**的场景中 FN 通常比 FP 更值得关注, 本实验以 FN 为主要风险指标;
+     但这是场景选择而非普遍规则(低价值批处理场景可能更在乎成本)
 
-10. 最终产出——四策略对比表(Part 2 的核心 artifact):
-    | Strategy    | Accuracy | Avg Latency | Total Output Tokens |
-    | All M1      |  ...     |  ...        |  ...                |
-    | All M2      |  ...     |  ...        |  ...                |
-    | Rule Router |  ...     |  ...(含router开销) |  ...           |
-    | SLM Router  |  ...     |  ...        |  ...                |
-    回答: 在 accuracy 不明显下降时, router 把 reasoning cost 降了多少?
+10. 最终产出——两张表(Part 2 的核心 artifact):
+
+    表A: router 质量诊断
+    | Router | Oracle Agreement | FN | FP | Router Latency |
+    | Rule   |  ...  | ... | ... | ~0 |
+    | SLM    |  ...  | ... | ... | ... |
+
+    表B: 端到端质量-成本权衡(**主要评价依据**)
+    | Strategy | Accuracy | E2E Latency | Output Tokens(近似 reasoning 成本) |
+    | All M1   |  ...     |  ...        |  ...     |
+    | All M2   |  ...     |  ...        |  ...     |
+    | Rule Router | ...   | ...(含router) | ...    |
+    | SLM Router  | ...   | ...(含router) | ...    |
+
+    核心问题(按重要性):
+    a) router 能否在 accuracy 接近 All M2 的前提下, 显著低于 All M2 的成本?
+    b) **router 自身的判断开销值得吗?** (router latency + 被选模型成本 vs 全开)
+       可能出现 router 总成本反而更高的情况, 那 router 就没意义
+    c) 注意: 评价以端到端 quality-cost 为主, 不要只看 router 的 oracle agreement
+       (agreement 高但业务 accuracy 差是可能的)
 
 === 提示 ===
 
