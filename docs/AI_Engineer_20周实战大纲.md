@@ -355,10 +355,14 @@
     thinking=False / thinking=True / thinking+verification / 手写传统CoT
     记录: accuracy, reasoning_tokens, latency, 总 tokens
     结论: 在什么难度的任务上开 reasoning 才值得付钱?
-  - Part 2 自动路由(Reasoning Router): 生产里不能人工决定开不开 thinking
-    * 规则版 router: 关键词/长度判断
-    * 小模型版 router: 用本地 Ollama 模型判断复杂度(免费, cheap model gates expensive)
-    * 用 Part 1 结论做决策依据, 验证 router 可靠性 + 省了多少成本
+  - Part 2 质量-成本路由实验(Quality-Cost Routing): 生产里不能人工决定开不开 thinking
+    * 建立 Oracle(理想路由): 用 Part 1 的 M1/M2 对错推出每题该不该开 thinking
+    * 规则版 router + 本地 Ollama 小模型版 router(判断"不开 thinking 会不会翻车",
+      而非"题难不难" —— difficulty != need for reasoning)
+    * 另造 holdout 测试集(看着简单实则难/看着难实则简单), 避免 evaluation leakage
+    * 关注 false negative(该开却没开=答错, 比 false positive 危险)
+    * 核心产出: 四策略对比表(全关/全开/规则router/小模型router)的
+      accuracy vs latency vs token —— router 在质量不掉时能省多少成本?
   - 复用 Week 1 参数调优 + stream_chat 的 enable_thinking + 本地 Ollama
 
 04c Prompt 约束与纯 prompt JSON:

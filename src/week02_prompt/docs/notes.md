@@ -512,9 +512,11 @@ messages[-1]: user 新消息                              ← 当前输入 (chat
 1. **2026 模型 zero-shot 基线已经很强**: 66.7% 起步, few-shot 边际收益很小甚至为负。
    "few-shot 一定比 zero-shot 好"在现代模型 + 简单任务上不成立。
 
-2. **few-shot 是双刃剑**: V3(3个高质量示例)反而比 zero-shot 更差。
-   示例选不好会引入偏见, 把模型带偏。多错的那条是"要退货并投诉"被示例
-   影响判成了投诉。
+2. **few-shot 是双刃剑(本质: 改变模型的决策边界 decision boundary)**:
+   示例不是单调增益, 而是移动模型判断类别的分界线——既可能提供有用的
+   task-specific evidence(任务专属证据), 也可能引入错误归纳/过拟合某些模式。
+   V3(3个高质量示例)反而比 zero-shot 更差, 多错的那条"要退货并投诉"被示例
+   把边界移歪, 判成了投诉。所以示例的**质量和边界覆盖比数量更重要**。
 
 3. **示例顺序影响可忽略**: V4 vs V5 结果完全一样。
    现代模型对示例顺序不敏感(早期小模型有 recency bias, 最后一个示例权重高)。
@@ -617,18 +619,26 @@ messages[-1]: user 新消息                              ← 当前输入 (chat
 1. **thinking 提升准确率, 但只在少数难题上**: 84% -> 100%, 差的就是那 4 道
    多步推理题(格路计数、火柴博弈、条件概率等)。大部分题 M1 也对。
 
-2. **代价极大**: M2 相比 M1, output token ×436(872 vs 2)、latency ×10。
-   为了少数难题给所有请求开 thinking, 是巨大浪费。
+2. **代价极大(本实验)**: 本次 25 题中, M2 相比 M1 平均 output token 从 2 涨到 872
+   (约 436×), latency 约 10×。注意这是"本模型+本数据集"的 output token 比,
+   不等于"thinking 永远贵 436×", 也不等于"金钱成本 436×"(计费还看 input/cached)。
+   结论: 对简单任务全量开 thinking 可能造成很高的资源浪费。
 
-3. **手写 CoT(M4) 完全失效**: M4 的 latency/token/错题和 M1 **几乎完全相同**
-   (都是 2 tokens, 错同样 4 题)。thinking=False 时喊"一步步推理", 模型根本没照做。
-   -> 实证 "reasoning model 时代传统 CoT 已死": 模型有原生 thinking 后,
-      手写 CoT 是空话, 触发不了它的推理。
+3. **手写 CoT(M4) 在本实验中无效**: M4 的 latency/token/错题和 M1 **几乎完全相同**
+   (都是 2 tokens, 错同样 4 题), thinking=False 时喊"一步步推理"模型没照做。
+   -> 限定结论: 对**原生 reasoning model**, 手写 CoT 已不是主要的推理控制手段
+      (模型有内置 thinking, 不需人工规定思考步骤)。
+   -> 注意边界: 这不等于"CoT 已死"。对**非 reasoning model / 小模型**, CoT 仍可能
+      有效——它本就是为那类模型设计的。现代做法是优先控制 reasoning effort /
+      thinking 开关, 给目标+约束, 而非规定内部思考步骤。
 
-4. **verification(M3) 是纯亏**: 准确率和 M2 一样(都100%), 但更慢更贵
+4. **verification(M3) 在本实验中未见收益**: 准确率和 M2 一样(都100%), 但更慢更贵
    (1228 vs 872 token), 还污染输出(把验证过程写进最终答案, 尤其难题)。
-   "验证"一词有歧义, 模型易理解成"输出一段验证说明"。措辞再精细也难完全避免。
-   -> verification 引导在 reasoning model 上没换来好处, 别用。
+   -> 注意 ceiling effect(天花板效应): M2 已经 100%, verification 根本没有提升空间,
+      所以只能说"本数据集上未观察到收益", 不能推广为"verification 无效"。
+   -> 更深的认知: 生产级 verification 不是 prompt 里加一句"请验证", 而是
+      check -> detect -> retry/repair 的可执行闭环(留待第15周 Harness)。
+      "请先验证"这种 prompt 提示既不可靠(易污染输出)、又非真正的质量保障手段。
 
 ### 12.5 thinking=False 藏不住思考(设计层面的领悟)
 
@@ -655,12 +665,14 @@ M4 想让模型"思考过程一步步推理, 但最终只给结果"——可 thi
 做完 04a/04b, 会产生一个疑问: 既然 CoT 失效、few-shot 教逻辑也没用,
 prompt engineering 是不是没用了? 结论不是"没用了", 而是**重心彻底转移了**。
 
-### 13.1 已失效/降级的(亲手验证过)
+### 13.1 在原生 reasoning model 上失效/降级的(本项目实验范围内验证过)
 
-- 手写 CoT("一步步想") -> 04b 证明: 原生 thinking 取代了它
-- verification 引导 -> 04b 证明: 纯亏(不提准还污染输出)
-- 情绪勒索("做错有严重后果"/"给你小费") -> 早就是玄学
-- few-shot 教逻辑 -> 04a 证明: 模型逻辑够强, 不需要教
+- 手写 CoT("一步步想") -> 04b: 在 reasoning model 上被原生 thinking 取代
+  (非 reasoning model 上仍可能有效)
+- verification 引导 -> 04b: 本数据集未见收益, 且污染输出
+  (但因 M2 已 100% 存在天花板效应, 不能推广为"无效")
+- 情绪勒索("做错有严重后果"/"给你小费") -> 普遍认为是玄学
+- few-shot 教逻辑 -> 04a: 现代模型逻辑够强, 教逻辑收益低(教格式/边界仍有用)
 
 ### 13.2 依然核心的
 
@@ -675,10 +687,11 @@ prompt engineering 是不是没用了? 结论不是"没用了", 而是**重心�
 prompt engineering 从"怎么写一句聪明的 prompt"变成了
 "**怎么设计、组装、控制整个模型的输入**":
 
-1. **Context Engineering > Prompt Engineering**
+1. **Prompt Engineering 扩展为 Context Engineering**(不是谁大于谁, 是包含/长大)
+   Context Engineering 本身就**包含** prompt/instruction/few-shot/message 排序,
+   再加上历史、摘要、RAG、memory、工具结果、状态的组装。
    Section 3 手写的滑动窗口/摘要/动态 system prompt/memory 就是这个。
-   Agent 的最终输入 = system + 历史 + 摘要 + RAG + memory + 工具结果 + 状态,
-   怎么在有限 context 里组装得又准又省, 比写一句好 prompt 难/值钱 100 倍。
+   怎么在有限 context 里组装得又准又省, 比写一句好 prompt 难/值钱得多。
 
 2. **Reasoning Control**: 04b 做的——何时开/关 thinking、router 路由。2026 新核心。
 

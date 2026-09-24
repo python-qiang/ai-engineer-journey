@@ -69,23 +69,46 @@
    - 手写 CoT(M4) 相比直接问(M1)还有用吗? 相比开 thinking(M2)呢?
    - 一句话决策: 什么情况下你会在生产里开 thinking?
 
---- Part 2: 自动路由 (Reasoning Router) ---
+--- Part 2: Quality-Cost Routing Experiment (质量-成本路由实验) ---
 
 背景: 生产里不能人工决定每条请求开不开 thinking, 要自动路由。
-架构: 请求 -> [便宜的 router 判断复杂度] -> 简单走 thinking=False, 复杂走 thinking=True
-      (cheap model gates expensive model: 便宜模型给贵模型把关)
+核心问题不是"谁判断难题最准", 而是: **在质量几乎不掉的前提下, router 能省多少
+reasoning 成本?** (routing = quality/cost trade-off, 不是难度分类)
 
-6. 实现两版 router, 用 Part 1 的数据集验证:
-   - 规则版 route_by_rule(q): 关键词/长度判断(简单、零成本、但脆弱)
-   - 小模型版 route_by_model(q): 用本地 Ollama 模型判断"这题需要深度推理吗"
-     * 复用 stream_chat, url 传 ollama_base_url, model 传 LOCAL_MODEL/LOCAL_WEAK_MODEL
-     * 本地模型做 router 的好处: 免费、快, 不给主流程加云端成本
-   - router 只返回 "thinking" / "no_thinking" 的决策, 不实际回答问题
+6. 建立 Oracle(理想路由, 来自 Part 1 数据):
+   - 每题已有 M1(no thinking) 和 M2(thinking) 的对错
+   - Oracle 决策: M1对 -> no_think(简单, 不用开); M1错&M2对 -> think(难题, 值得开)
+   - Oracle 是"上帝视角的正确路由", 用来评判 router 判得准不准
 
-7. 验证 router:
-   - 对数据集每题跑 router, 看它的决策和题目实际难度是否吻合
-   - 对比: 全开 thinking vs router 决策, 省了多少 token/成本, accuracy 掉了吗
-   - 结论: router 的判断可靠吗? 规则版 vs 小模型版哪个好?
+7. 实现两版 router(都只返回决策 THINK / NO_THINK, 不回答问题):
+   - 规则版 route_by_rule(q): 关键词/长度等信号(简单、零成本、但脆弱)
+   - 小模型版 route_by_model(q): 用本地 Ollama 模型(LOCAL_MODEL, thinking=False)
+     * 关键: 让它判断的不是"这题难不难", 而是**"不开 thinking 直接答, 失败风险高吗"**
+       (difficulty != need for reasoning: 大数乘法看着难其实秒算对;
+        "这代码为啥只在生产失败"字少却极难)
+     * 复用 stream_chat, url=ollama_base_url, model=LOCAL_MODEL
+     * 本地模型做 router: 免费, 但仍有 latency, 要算进总成本
+
+8. 用 router evaluation set 验证(避免 evaluation leakage 数据泄漏):
+   - 不要用 Part 1 那 25 题(已被 M1-M4 用过, 规则 router 会过拟合)
+   - 另造 10-15 道**新题**做 router 测试集, 故意包含:
+     * 看着简单实则难(需要 thinking)
+     * 看着复杂实则简单(不需要 thinking)
+   - 这样才能测出 router 是否真学到东西, 而非背题
+
+9. 对每个 router 记录(对照 Oracle):
+   - router accuracy(和 Oracle 决策一致的比例)
+   - **false negative(该 think 却判 no_think)**: 最危险, 会直接答错
+   - false positive(该 no_think 却判 think): 只是多花钱, 可接受
+   - 两种错的成本不对等, router 应偏向"宁可多开也别漏开"
+
+10. 最终产出——四策略对比表(Part 2 的核心 artifact):
+    | Strategy    | Accuracy | Avg Latency | Total Output Tokens |
+    | All M1      |  ...     |  ...        |  ...                |
+    | All M2      |  ...     |  ...        |  ...                |
+    | Rule Router |  ...     |  ...(含router开销) |  ...           |
+    | SLM Router  |  ...     |  ...        |  ...                |
+    回答: 在 accuracy 不明显下降时, router 把 reasoning cost 降了多少?
 
 === 提示 ===
 
