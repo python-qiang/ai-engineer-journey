@@ -351,11 +351,15 @@
   - 示例池与测试集分开(避免 answer leakage)
 
 04b Reasoning Control(本节重点, 花最多时间):
-  - 同一逻辑/数学/代码题, 4 种模式对比:
+  - Part 1 四种模式对比: 同一批逻辑/数学/代码题(难易搭配)
     thinking=False / thinking=True / thinking+verification / 手写传统CoT
-  - 记录: accuracy, reasoning_tokens, latency, 总 tokens
-  - 结论: 在什么任务上开 reasoning 才值得付钱?
-  - 复用 Week 1 参数调优 + 现有 stream_chat 的 enable_thinking
+    记录: accuracy, reasoning_tokens, latency, 总 tokens
+    结论: 在什么难度的任务上开 reasoning 才值得付钱?
+  - Part 2 自动路由(Reasoning Router): 生产里不能人工决定开不开 thinking
+    * 规则版 router: 关键词/长度判断
+    * 小模型版 router: 用本地 Ollama 模型判断复杂度(免费, cheap model gates expensive)
+    * 用 Part 1 结论做决策依据, 验证 router 可靠性 + 省了多少成本
+  - 复用 Week 1 参数调优 + stream_chat 的 enable_thinking + 本地 Ollama
 
 04c Prompt 约束与纯 prompt JSON:
   - 情感分类输出 JSON, 3 种约束强度对比:

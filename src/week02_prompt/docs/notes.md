@@ -13,6 +13,8 @@
 - [9. 千问 Token 计算详解](#9-千问-token-计算详解)
 - [10. Pin vs Memory vs Remember — 上下文记忆三件套](#10-pin-vs-memory-vs-remember--上下文记忆三件套)
 - [11. 04a Zero-shot vs Few-shot 实验 — few-shot 不是万能药](#11-04a-zero-shot-vs-few-shot-实验--few-shot-不是万能药)
+- [12. 04b Reasoning Control 实验 — thinking 的真实代价](#12-04b-reasoning-control-实验--thinking-的真实代价)
+- [13. 2026 年 Prompt Engineering 还剩什么用？—— 认知升华](#13-2026-年-prompt-engineering-还剩什么用--认知升华)
 
 ---
 
@@ -574,3 +576,123 @@ messages[-1]: user 新消息                              ← 当前输入 (chat
 - 判断 prompt 好坏必须靠**数据 + 多次运行 + 回归测试**, 不能凭单次或感觉
 - 这些痛点(随机性、回归、按下葫芦浮起瓢)正是后续 04e / 第16周要解决的
 
+
+---
+
+## 12. 04b Reasoning Control 实验 — thinking 的真实代价
+
+### 12.1 实验设置
+
+- 任务: 25 道有明确答案的推理题(算术/代码追踪/逻辑/概率/博弈), 答案可归一化
+- 模型: qwen3.7-flash
+- 四种模式(同一批题):
+  - M1: thinking=False, 直接问
+  - M2: thinking=True
+  - M3: thinking=True + prompt 要求"先验证"
+  - M4: thinking=False + prompt 要求"一步步推理"(手写 CoT 思维链)
+
+### 12.2 一个重要的前置发现: 题目难度这条路走不通
+
+想用"更难的题"区分 thinking 开/关, 但失败了——2026 的 LLM 对**任何有明确、
+可归一化答案的推理题**几乎都能做对(gemini-2.5-flash 亦然)。
+加了贝叶斯/蒙提霍尔/递归等"人类直觉会错"的难题, thinking=True 依旧全对。
+
+结论: **想在'标准答案题'的难度上难住现代 LLM 基本不可能**, 除非是世界未解难题
+或真实物理世界的复杂逻辑。
+-> 所以实验重心从 accuracy(准确率) 转向 cost(成本)。这才是 2026 的真问题。
+
+### 12.3 核心数据: 成本对比
+
+| Mode | avg_latency | avg_output_tokens | accuracy | 输出干净? |
+|------|------------|-------------------|----------|----------|
+| M1 直接 | 1.19s | 2 | 84% (4错) | ✅ |
+| M2 thinking | 12.79s | 872 | 100% | ✅ |
+| M3 thinking+验证 | 17.62s | 1228 | 100% | ❌ 部分污染 |
+| M4 手写CoT | 1.32s | 2 | 84% (4错) | ✅ |
+
+极端单题: M2 火柴博弈题 43 秒、3076 output tokens(只为得到答案"2")。
+
+### 12.4 四个关键结论
+
+1. **thinking 提升准确率, 但只在少数难题上**: 84% -> 100%, 差的就是那 4 道
+   多步推理题(格路计数、火柴博弈、条件概率等)。大部分题 M1 也对。
+
+2. **代价极大**: M2 相比 M1, output token ×436(872 vs 2)、latency ×10。
+   为了少数难题给所有请求开 thinking, 是巨大浪费。
+
+3. **手写 CoT(M4) 完全失效**: M4 的 latency/token/错题和 M1 **几乎完全相同**
+   (都是 2 tokens, 错同样 4 题)。thinking=False 时喊"一步步推理", 模型根本没照做。
+   -> 实证 "reasoning model 时代传统 CoT 已死": 模型有原生 thinking 后,
+      手写 CoT 是空话, 触发不了它的推理。
+
+4. **verification(M3) 是纯亏**: 准确率和 M2 一样(都100%), 但更慢更贵
+   (1228 vs 872 token), 还污染输出(把验证过程写进最终答案, 尤其难题)。
+   "验证"一词有歧义, 模型易理解成"输出一段验证说明"。措辞再精细也难完全避免。
+   -> verification 引导在 reasoning model 上没换来好处, 别用。
+
+### 12.5 thinking=False 藏不住思考(设计层面的领悟)
+
+M4 想让模型"思考过程一步步推理, 但最终只给结果"——可 thinking=False 没有
+独立的 <think> 空间, 模型要么无视引导(退化成 M1), 要么把思考写进 content。
+反证了**原生 thinking(M2)的价值**: 它提供了"思考归思考、答案归答案"的分离机制,
+这是手写 CoT 给不了的。
+
+### 12.6 最终认知: 这就是 Router 的意义
+
+- 对标准答案类推理任务, 现代模型 thinking=False 已够准, 开 thinking 几乎不提升
+  准确率, 却付出数百倍 token 和 10 倍延迟。
+- 但你事先不知道哪道题属于"M1 会栽"的少数难题。
+- 所以生产策略: **默认关 thinking(省钱快), 用一个前置 router 识别出真正需要深度
+  推理的少数请求才开**。用 M1 成本处理简单题, 用 M2 能力处理难题。
+- thinking 真正的价值场景不是"标准答案题", 而是 Agent 多步规划、长文档综合权衡、
+  代码库级决策等**没有唯一答案**的任务(留待 Week 12/13 Agent 周体会)。
+- -> Part 2 实现 router 验证这个策略。
+
+---
+
+## 13. 2026 年 Prompt Engineering 还剩什么用？—— 认知升华
+
+做完 04a/04b, 会产生一个疑问: 既然 CoT 失效、few-shot 教逻辑也没用,
+prompt engineering 是不是没用了? 结论不是"没用了", 而是**重心彻底转移了**。
+
+### 13.1 已失效/降级的(亲手验证过)
+
+- 手写 CoT("一步步想") -> 04b 证明: 原生 thinking 取代了它
+- verification 引导 -> 04b 证明: 纯亏(不提准还污染输出)
+- 情绪勒索("做错有严重后果"/"给你小费") -> 早就是玄学
+- few-shot 教逻辑 -> 04a 证明: 模型逻辑够强, 不需要教
+
+### 13.2 依然核心的
+
+- Instruction / 约束设计: 让模型知道要什么、不要什么、边界在哪(永恒)
+- Few-shot 教**格式/业务黑话/分类边界**(不是教逻辑) -> 04a 的 V6 验证
+- 结构化输出约束: 让输出能被程序消费(第3周深入)
+- Role / 人设: 定角色、语气、职责边界
+- RAG: 模型不知道你的私有数据, 必须喂进 context
+
+### 13.3 重心转移(这才是关键)
+
+prompt engineering 从"怎么写一句聪明的 prompt"变成了
+"**怎么设计、组装、控制整个模型的输入**":
+
+1. **Context Engineering > Prompt Engineering**
+   Section 3 手写的滑动窗口/摘要/动态 system prompt/memory 就是这个。
+   Agent 的最终输入 = system + 历史 + 摘要 + RAG + memory + 工具结果 + 状态,
+   怎么在有限 context 里组装得又准又省, 比写一句好 prompt 难/值钱 100 倍。
+
+2. **Reasoning Control**: 04b 做的——何时开/关 thinking、router 路由。2026 新核心。
+
+3. **Prompt as Code**: Section 5 要做的——模板化、版本化、可测试、可评估。
+   prompt 是像代码一样管理的工程资产, 不是随手写的字符串。
+
+4. **评估驱动**: 04a/04b 都撞到"单次跑分不可靠""按下葫芦浮起瓢"。
+   判断 prompt 好坏靠数据/评估, 不靠感觉(第16周核心)。
+
+### 13.4 一句话
+
+> Prompt engineering 没消失, 它长大了——从"写咒语"进化成
+> "**设计 LLM 的输入程序 + 控制推理 + 管理上下文 + 用评估迭代**"。
+
+失效的是"哄模型"的小聪明(谁都能学); 升级的是工程能力(context engineering /
+reasoning control / evaluation)——这才是软开 + 统计背景的用武之地, 也是 2026
+AI 应用工程师值钱的地方。
