@@ -45,7 +45,7 @@
      * 简单题: thinking 关也能对 -> 用来证明"简单任务开 thinking 是浪费"
      * 难题: thinking 关会错、开才对 -> 用来证明"难任务 thinking 值钱"
    - 每题格式: (题目, 标准答案) —— 答案要能被程序判对错(数字/单个词/可归一化的字符串)
-   - 8-12 题, 难易搭配
+   - 本实验使用 25 题, 难易搭配; 如果重新设计数据集, 保持题目数量与实验记录一致
 
 2. 实现四种 prompt / 调用模式:
    - build_direct_prompt(q): 直接问
@@ -59,9 +59,11 @@
    - M3: thinking=True + verification 提示
    - M4: thinking=False + 手写 CoT
 
-4. 每种记录: accuracy / 平均 output(reasoning) tokens / 平均 latency / 总 tokens
+4. 每种记录: accuracy / 平均 output tokens / 平均 latency / 总 tokens
    - latency: 用 time.time() 掐每次调用的耗时
-   - reasoning tokens: 看 usage 里 thinking 相关字段(或用 output_tokens 近似)
+   - output_tokens 使用 API 的 completion_tokens 时, 它是 reasoning + visible output
+     的合计, 只能作为 thinking 成本的近似; 如果 provider 单独提供 reasoning_tokens,
+     应优先分开记录
 
 5. 写结论:
    - 简单题上四种模式差别大吗? thinking 带来的额外成本值吗?
@@ -85,7 +87,8 @@ reasoning 成本?** (routing = quality/cost trade-off, 不是难度分类)
      | ❌ | ✅ | THINK (thinking 确实救回来了) |
      | ❌ | ❌ | UNRESOLVED (thinking 也没解决, 该样本无法证明路由该选什么) |
    - 代码: if m1_ok: NO_THINK; elif m2_ok: THINK; else: UNRESOLVED
-   - UNRESOLVED 的样本不计入 router 的对错统计
+   - UNRESOLVED 的样本不计入 router 的 Oracle Agreement / FN / FP 等诊断统计,
+     但仍计入端到端 Accuracy
 
 7. 实现两版 router(都只返回决策 THINK / NO_THINK, 不回答问题):
    - 规则版 route_by_rule(q): 关键词/长度等信号(简单、开销≈0、但脆弱)
@@ -114,12 +117,14 @@ reasoning 成本?** (routing = quality/cost trade-off, 不是难度分类)
 10. 最终产出——两张表(Part 2 的核心 artifact):
 
     表A: router 质量诊断
-    | Router | Oracle Agreement | FN | FP | Router Latency |
-    | Rule   |  ...  | ... | ... | ~0 |
-    | SLM    |  ...  | ... | ... | ... |
+    | Router | Think Rate | Oracle Agreement | FN | FP | Router Latency |
+    | Rule   | ... | ... | ... | ... | ~0 |
+    | SLM    | ... | ... | ... | ... | ... |
+    - Think Rate = router 将 holdout 请求送入 M2 的比例
 
     表B: 端到端质量-成本权衡(**主要评价依据**)
-    | Strategy | Accuracy | E2E Latency | Output Tokens(近似 reasoning 成本) |
+    | Strategy | Accuracy | E2E Latency | Total Output Tokens(近似 thinking 成本) |
+
     | All M1   |  ...     |  ...        |  ...     |
     | All M2   |  ...     |  ...        |  ...     |
     | Rule Router | ...   | ...(含router) | ...    |
